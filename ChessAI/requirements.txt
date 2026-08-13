@@ -1,0 +1,4 @@
+python-chess>=1.999
+pygame>=2.5.0
+numpy>=1.26.0
+pytest>=8.0.0
