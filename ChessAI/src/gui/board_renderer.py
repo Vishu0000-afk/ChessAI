@@ -107,6 +107,7 @@ class BoardRenderer:
         self._highlight_selected(surface, selected_square)
         self._highlight_check(surface, board)
         self._draw_pieces(surface, board, anim_move=anim_move, anim_progress=anim_progress)
+        self._draw_coordinates(surface)
         self._highlight_legal_targets(surface, board, legal_targets)
 
     def _draw_squares(self, surface: pygame.Surface) -> None:
@@ -144,6 +145,20 @@ class BoardRenderer:
         highlight = pygame.Surface((self.square_size, self.square_size), pygame.SRCALPHA)
         highlight.fill((*CHECK_COLOR, 140))
         surface.blit(highlight, (x, y))
+
+    def _draw_coordinates(self, surface: pygame.Surface) -> None:
+        """Draw file letters (a-h) along the bottom and rank numbers (1-8) on the left."""
+        label_color = (0, 0, 0)
+        for file in range(8):
+            square = chess.square(file, 0)
+            x, y = self.square_to_pixel(square)
+            label = self._label_font.render(chess.FILE_NAMES[file], True, label_color)
+            surface.blit(label, (x + 3, y + self.square_size - label.get_height() - 3))
+        for rank in range(8):
+            square = chess.square(0, rank)
+            x, y = self.square_to_pixel(square)
+            label = self._label_font.render(chess.RANK_NAMES[rank], True, label_color)
+            surface.blit(label, (x + 3, y + 3))
 
     def _highlight_legal_targets(
         self, surface: pygame.Surface, board: chess.Board, legal_targets: List[chess.Square]

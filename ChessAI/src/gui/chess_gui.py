@@ -16,7 +16,6 @@ import chess
 import pygame
 
 from src.engine.board import Board
-from src.engine.engine import ChessEngine
 from src.gui.board_renderer import BoardRenderer
 from src.gui.input_handler import InputHandler
 
@@ -36,12 +35,19 @@ TEXT_COLOR = (230, 230, 230)
 class ChessGUI:
     """PyGame application running a Human vs AI chess game."""
 
-    def __init__(self, ai_color: chess.Color = chess.BLACK, search_depth: int = 3) -> None:
+    def __init__(
+        self,
+        ai_color: chess.Color = chess.BLACK,
+        search_depth: int = 3,
+        agent: Optional["ChessAgent"] = None,
+    ) -> None:
         """Create the GUI application.
 
         Args:
             ai_color: Which color the engine plays (chess.WHITE or chess.BLACK).
-            search_depth: Search depth passed to the ChessEngine.
+            search_depth: Search depth used if no agent is supplied.
+            agent: Optional bot to play as the AI. If None, a classical
+                engine agent at ``search_depth`` is created.
         """
         pygame.init()
         pygame.display.set_caption("ChessAI")
@@ -52,7 +58,11 @@ class ChessGUI:
         self.human_color = not ai_color
         self.renderer = BoardRenderer(SQUARE_SIZE, flipped=(self.human_color == chess.BLACK))
         self.input_handler = InputHandler(self.renderer)
-        self.engine = ChessEngine(depth=search_depth)
+        if agent is None:
+            from src.agents.classical_engine import ClassicalEngineAgent
+
+            agent = ClassicalEngineAgent(depth=search_depth)
+        self.agent = agent
 
         self.board = Board.new_game()
         self.last_move: Optional[chess.Move] = None
@@ -117,11 +127,11 @@ class ChessGUI:
             logger.info("Human played %s", move.uci())
 
     def _make_ai_move(self) -> None:
-        move = self.engine.get_best_move(self.board)
+        move = self.agent.select_move(self.board.raw)
         if move is None:
             logger.info("Engine found no move; game must be over.")
             return
-        stats = self.engine.get_stats()
+        stats = self.engine_stats()
         logger.info(
             "AI chose %s | depth=%d nodes=%d time=%.2fs nps=%.0f eval=%d",
             move.uci(),
@@ -132,6 +142,18 @@ class ChessGUI:
             stats.evaluation,
         )
         self._start_animation(move)
+
+    def engine_stats(self):
+        """Best-effort stats snapshot from the underlying classical engine."""
+        engine = getattr(self.agent, "engine", None)
+        if engine is not None:
+            return engine.get_stats()
+        return self._empty_stats()
+
+    def _empty_stats(self):
+        from src.engine.engine import EngineStats
+
+        return EngineStats()
 
     def _start_animation(self, move: chess.Move) -> None:
         self._anim_move = move
@@ -155,7 +177,9 @@ class ChessGUI:
         self.last_move = None
         self._anim_move = None
         self.input_handler.reset()
-        self.engine.reset()
+        reset = getattr(self.agent, "reset", None)
+        if callable(reset):
+            reset()
 
     def _draw(self) -> None:
         self.screen.fill(BACKGROUND_COLOR)

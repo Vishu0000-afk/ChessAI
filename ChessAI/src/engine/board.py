@@ -37,6 +37,17 @@ class Board:
         """Create a board from a FEN string."""
         return cls(fen=fen)
 
+    @classmethod
+    def from_raw(cls, raw: chess.Board) -> "Board":
+        """Wrap an existing python-chess Board without copying.
+
+        Intended for agents that already hold a raw ``chess.Board`` and want
+        to reuse the wrapped interface (e.g. the classical engine agent).
+        """
+        wrapper = cls()
+        wrapper._board = raw
+        return wrapper
+
     def make_move(self, move: chess.Move) -> None:
         """Apply a move to the board.
 
