@@ -58,15 +58,13 @@
     python ChessAI/src/main.py --mode self_play --games 10000 --no-train --no-evaluate
 
   Resume from the latest checkpoint (default behavior):
-    python ChessAI/src/main.py --mode self_play --games 1000000 --workers 8
+    python ChessAI/src/main.py --mode self_play --games 50000 --workers 8
 
   Start fresh (ignore existing checkpoints):
     python ChessAI/src/main.py --mode self_play --games 1000000 --no-resume
 
   Tune training cadence:
-    python ChessAI/src/main.py --mode self_play --games 100000 \
-        --train-every 100 --steps 100 --batch-size 512 --checkpoint-every 1000
-
+python ChessAI/src/main.py --mode self_play --games 100000 --train-every 100 --steps 100 --batch-size 512 --checkpoint-every 1000
   Exploration temperature control:
     python ChessAI/src/main.py --mode self_play --games 10000 --temperature 1.0
 

@@ -30,9 +30,9 @@ class LocalPredictor:
     """Direct in-process batched predictor around a torch model."""
 
     def __init__(self, model: torch.nn.Module, device: str = "cpu", name: str = "local") -> None:
-        self.model = model
         self.device = device
         self.name = name
+        self.model = model.to(self.device)
         self._lock = None  # optional external lock passed by coordinator
 
     def predict_batch(self, positions: List[chess.Board]) -> Tuple[Logits, Values]:
