@@ -9,6 +9,7 @@ move search lives in ChessEngine.
 from __future__ import annotations
 
 import logging
+import time
 from typing import Optional
 
 import chess
@@ -25,6 +26,7 @@ WINDOW_SIZE = 640
 SQUARE_SIZE = WINDOW_SIZE // 8
 SIDEBAR_HEIGHT = 60
 FPS = 30
+AI_MOVE_DELAY = 1.0  # Seconds to wait after the last move before the AI plays.
 
 BACKGROUND_COLOR = (40, 40, 40)
 TEXT_COLOR = (230, 230, 230)
@@ -55,6 +57,7 @@ class ChessGUI:
         self.last_move: Optional[chess.Move] = None
         self.running = True
         self.status_message = ""
+        self._last_move_time = time.monotonic()
 
         self._font = pygame.font.SysFont("arial", 22)
 
