@@ -50,7 +50,7 @@ class InferenceServer(threading.Thread):
         self.use_mixed_precision = use_mixed_precision
         self.poll_seconds = poll_seconds
         self.compute_lock = compute_lock
-        self._stop = threading.Event()
+        self._stop_event = threading.Event()
         self._inflight = 0
         self.worker_queues: Dict[int, object] = {}
 
@@ -68,11 +68,11 @@ class InferenceServer(threading.Thread):
         self.worker_queues[worker_id] = result_queue
 
     def stop(self) -> None:
-        self._stop.set()
+        self._stop_event.set()
 
     # ------------------------------------------------------------------
     def run(self) -> None:
-        while not self._stop.is_set():
+        while not self._stop_event.is_set():
             batch = self._drain()
             if batch:
                 self._forward(batch)

@@ -57,6 +57,7 @@ def _parse_args(argv: Optional[list] = None) -> argparse.Namespace:
     parser.add_argument("--train-every", type=int, default=None, help="Train every N games.")
     parser.add_argument("--steps", type=int, default=None, help="Training steps per cycle.")
     parser.add_argument("--batch-size", type=int, default=None, help="Training mini-batch size.")
+    parser.add_argument("--inference-batch", type=int, default=None, help="Max positions per GPU/CPU forward pass.")
     parser.add_argument("--checkpoint-every", type=int, default=None, help="Checkpoint every N games.")
     parser.add_argument("--temperature", type=float, default=None, help="Self-play exploration temperature.")
     parser.add_argument("--replay-size", type=int, default=None, help="Replay buffer capacity.")
@@ -82,6 +83,7 @@ def _selfplay_config(args: argparse.Namespace, train_enabled: bool = True) -> Se
         "train_every": "train_every_n_games",
         "steps": "training_steps",
         "batch_size": "batch_size",
+        "inference_batch": "inference_max_batch",
         "checkpoint_every": "checkpoint_every_n_games",
         "temperature": "temperature",
         "replay_size": "replay_buffer_size",

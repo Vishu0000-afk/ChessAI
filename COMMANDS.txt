@@ -1,21 +1,45 @@
 ================================================================================
  ChessAI - Mode Switching Commands
  ========================================================================
- Run all commands from the project directory (ChessAI/):
-     cd ChessAI
+ The commands below assume you are in the REPO ROOT folder where this file
+ lives (the folder containing COMMANDS.txt, .idea/, and ChessAI/).
+
+ If your venv is not already active (you should see (.venv) in the prompt):
+
+   Windows CMD:        ChessAI\.venv\Scripts\activate
+   PowerShell:         ChessAI\.venv\Scripts\Activate.ps1
+   (or just use PyCharm's terminal, which activates it for you)
 
  Device flag: --device auto|cpu|cuda  (default auto = uses GPU when available)
+
+ GPU SETUP (one-time, only if you want --device cuda)
+ --------------------------------------------------------------------------------
+  If self-play/benchmark fails with "Torch not compiled with CUDA enabled",
+  your venv has a CPU-only torch build. Reinstall a CUDA build (RTX 4050 etc.):
+
+    pip install --force-reinstall torch==2.13.0+cu126 --index-url https://download.pytorch.org/whl/cu126
+
+  Verify the GPU is seen:
+    python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
+    # expected: 2.13.0+cu126 True
+
+  Or just run on CPU instead (no install needed, slower):
+    python ChessAI/src/main.py --mode self_play --games 1000000 --workers 8 --device cpu
 ================================================================================
 
 1) HUMAN VS AI MODE (PyGame GUI)
 --------------------------------------------------------------------------------
-  python src/main.py
-  python src/main.py --mode human_vs_ai
+  python ChessAI/src/main.py
+  python ChessAI/src/main.py --mode human_vs_ai
 
   Change the AI opponent:
-    python src/main.py --mode human_vs_ai --ai-agent classical   (alpha-beta engine)
-    python src/main.py --mode human_vs_ai --ai-agent neural      (neural network)
-    python src/main.py --mode human_vs_ai --ai-agent random      (random bot)
+    python ChessAI/src/main.py --mode human_vs_ai --ai-agent classical   (alpha-beta engine)
+    python ChessAI/src/main.py --mode human_vs_ai --ai-agent neural      (neural network)
+    python ChessAI/src/main.py --mode human_vs_ai --ai-agent random      (random bot)
+
+  Play against the TRAINED neural model on GPU (loads the latest
+  self-play checkpoint from checkpoints/ and plays it):
+    python ChessAI/src/main.py --mode human_vs_ai --ai-agent neural --device cuda
 
   Other useful flags:
     --depth 4            # classical engine search depth (plies)
@@ -25,35 +49,35 @@
 2) SELF-PLAY MODE (headless AI-vs-AI, continuous learning)
 --------------------------------------------------------------------------------
   Quick smoke run (100 games):
-    python src/main.py --mode self_play --games 100 --no-resume
+    python ChessAI/src/main.py --mode self_play --games 100 --no-resume
 
   Full GPU training run:
-    python src/main.py --mode self_play --games 1000000 --workers 8 --device cuda
+    python ChessAI/src/main.py --mode self_play --games 50000 --workers 8 --device cuda
 
   Data collection only (no training / no evaluation):
-    python src/main.py --mode self_play --games 10000 --no-train --no-evaluate
+    python ChessAI/src/main.py --mode self_play --games 10000 --no-train --no-evaluate
 
   Resume from the latest checkpoint (default behavior):
-    python src/main.py --mode self_play --games 1000000 --workers 8
+    python ChessAI/src/main.py --mode self_play --games 1000000 --workers 8
 
   Start fresh (ignore existing checkpoints):
-    python src/main.py --mode self_play --games 1000000 --no-resume
+    python ChessAI/src/main.py --mode self_play --games 1000000 --no-resume
 
   Tune training cadence:
-    python src/main.py --mode self_play --games 100000 \
+    python ChessAI/src/main.py --mode self_play --games 100000 \
         --train-every 100 --steps 100 --batch-size 512 --checkpoint-every 1000
 
   Exploration temperature control:
-    python src/main.py --mode self_play --games 10000 --temperature 1.0
+    python ChessAI/src/main.py --mode self_play --games 10000 --temperature 1.0
 
   Control concurrency / workers (effective GPU batch size = workers * concurrency):
-    python src/main.py --mode self_play --games 100000 --workers 4 --concurrency 8
+    python ChessAI/src/main.py --mode self_play --games 100000 --workers 4 --concurrency 8
 
 
 3) BENCHMARK MODE (throughput, no training)
 --------------------------------------------------------------------------------
-  python src/main.py --mode benchmark --games 10000
-  python src/main.py --mode benchmark --games 100000 --workers 8 --device cuda
+  python ChessAI/src/main.py --mode benchmark --games 10000
+  python ChessAI/src/main.py --mode benchmark --games 100000 --workers 8 --device cuda
 
 
 4) CHANGE THE DEFAULT MODE (configs/config.py)
@@ -63,10 +87,17 @@
     GAME_MODE = "human_vs_ai"   # or "self_play" | "benchmark"
 
   Then simply run:
-    python src/main.py
+    python ChessAI/src/main.py
 
 
-5) COMMON FLAGS
+5) RUNNING FROM INSIDE THE PROJECT FOLDER (ChessAI/)
+--------------------------------------------------------------------------------
+  If you have already done  cd ChessAI, drop the "ChessAI/" prefix:
+
+    python src/main.py --mode self_play --games 1000000 --workers 8 --device cuda
+
+
+6) COMMON FLAGS
 --------------------------------------------------------------------------------
   --games N           total games to run
   --workers N         number of worker processes
@@ -84,4 +115,32 @@
   --checkpoint-every N  checkpoint every N games
   --replay-size N     replay buffer capacity
   --concurrency N     games in flight per worker
+
+
+7) TROUBLESHOOTING
+--------------------------------------------------------------------------------
+  ERROR: can't open file '...\src\main.py': No such file or directory
+    You are running from the wrong folder. Either:
+      - Run `python ChessAI/src/main.py ...` (repo root, where this file is), or
+      - Do `cd ChessAI` first, then `python src/main.py ...`.
+
+  ERROR: ModuleNotFoundError: No module named 'torch'  (or 'chess' / 'pygame' / 'numpy')
+    Your python is not the project venv. Activate it first:
+      ChessAI\.venv\Scripts\activate
+    then re-run the command. Verify with:
+      python -c "import torch, chess, pygame, numpy; print('ok')"
+
+  ERROR: 'python' is not recognized as an internal or external command
+    Python is not on PATH. Use the venv directly:
+      ChessAI\.venv\Scripts\python.exe ChessAI/src/main.py --mode benchmark --games 1000
+
+  ERROR: Torch not compiled with CUDA enabled  (AssertionError with --device cuda)
+    Your venv has a CPU-only torch. Reinstall a CUDA build (see GPU SETUP above):
+      pip install --force-reinstall torch==2.13.0+cu126 --index-url https://download.pytorch.org/whl/cu126
+    Then verify: python -c "import torch; print(torch.cuda.is_available())"  # -> True
+    Or just run with --device cpu instead.
+
+  ERROR: 'Event' object is not callable  (during self-play shutdown)
+    Outdated code that shadows threading.Thread._stop. Update the repo
+    (src/selfplay/inference.py now uses _stop_event).
 ================================================================================

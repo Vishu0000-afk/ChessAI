@@ -11,6 +11,8 @@ import logging
 import time
 from dataclasses import replace
 
+import torch
+
 from src.learning.replay_buffer import ReplayBuffer
 from src.selfplay.coordinator import SelfPlayCoordinator
 
@@ -43,7 +45,14 @@ def run_benchmark(config, games: int) -> dict:
         "device": bench_config.device,
         "num_workers": bench_config.num_workers,
         "concurrency": bench_config.self_play_concurrency,
+        "inference_max_batch": bench_config.inference_max_batch,
     }
+
+    # Peak VRAM report for CUDA runs (device is cuda even on CPU-only builds
+    # when explicitly requested, so guard on torch.cuda.is_available()).
+    if bench_config.device.startswith("cuda") and torch.cuda.is_available():
+        results["vram_allocated_gb"] = torch.cuda.max_memory_allocated() / 1e9
+        results["vram_reserved_gb"] = torch.cuda.max_memory_reserved() / 1e9
 
     # Separate training-throughput micro-benchmark on the collected data.
     if len(coordinator.replay_buffer) >= bench_config.batch_size:
@@ -79,6 +88,10 @@ def _print_report(results: dict) -> None:
     print(f"Device:             {results['device']:>12s}")
     print(f"Workers:            {results['num_workers']:>12d}")
     print(f"Games in flight:    {results['concurrency']:>12d}")
+    print(f"Inference max batch:{results['inference_max_batch']:>12d}")
+    if "vram_allocated_gb" in results:
+        print(f"VRAM peak (alloc):  {results['vram_allocated_gb']:>12.2f} GB")
+        print(f"VRAM peak (resv):   {results['vram_reserved_gb']:>12.2f} GB")
     if "training" in results:
         t = results["training"]
         print(f"Train samples/sec:  {t['samples_per_sec']:>12.1f}")
