@@ -26,7 +26,8 @@ WINDOW_SIZE = 640
 SQUARE_SIZE = WINDOW_SIZE // 8
 SIDEBAR_HEIGHT = 60
 FPS = 30
-AI_MOVE_DELAY = 1.0  # Seconds to wait after the last move before the AI plays.
+AI_MOVE_DELAY = 2.0  # Seconds to wait after the last move before the AI plays.
+ANIM_DURATION = 0.5  # Seconds a piece takes to slide between squares.
 
 BACKGROUND_COLOR = (40, 40, 40)
 TEXT_COLOR = (230, 230, 230)
@@ -58,6 +59,8 @@ class ChessGUI:
         self.running = True
         self.status_message = ""
         self._last_move_time = time.monotonic()
+        self._anim_move: Optional[chess.Move] = None
+        self._anim_start = 0.0
 
         self._font = pygame.font.SysFont("arial", 22)
 
@@ -67,7 +70,14 @@ class ChessGUI:
         while self.running:
             self._handle_events()
 
-            if not self.board.is_game_over() and self.board.turn() == self.ai_color:
+            if self._anim_move is not None:
+                if time.monotonic() - self._anim_start >= ANIM_DURATION:
+                    self._apply_animated_move()
+            elif (
+                not self.board.is_game_over()
+                and self.board.turn() == self.ai_color
+                and time.monotonic() - self._last_move_time >= AI_MOVE_DELAY
+            ):
                 self._make_ai_move()
 
             self._draw()
@@ -86,6 +96,8 @@ class ChessGUI:
                 self._handle_click(event.pos)
 
     def _handle_click(self, pos: tuple) -> None:
+        if self._anim_move is not None:
+            return
         if self.board.is_game_over():
             return
         if self.board.turn() != self.human_color:
@@ -97,23 +109,21 @@ class ChessGUI:
 
         move = self.input_handler.handle_click(self.board.raw, x, y)
         if move is not None:
-            try:
-                self.board.make_move(move)
-                self.last_move = move
-                logger.info("Human played %s", move.uci())
-            except ValueError:
+            if not self.board.is_legal(move):
                 logger.warning("Rejected illegal move attempt: %s", move)
+                return
+            self._last_move_time = time.monotonic()
+            self._start_animation(move)
+            logger.info("Human played %s", move.uci())
 
     def _make_ai_move(self) -> None:
         move = self.engine.get_best_move(self.board)
         if move is None:
             logger.info("Engine found no move; game must be over.")
             return
-        self.board.make_move(move)
-        self.last_move = move
         stats = self.engine.get_stats()
         logger.info(
-            "AI played %s | depth=%d nodes=%d time=%.2fs nps=%.0f eval=%d",
+            "AI chose %s | depth=%d nodes=%d time=%.2fs nps=%.0f eval=%d",
             move.uci(),
             stats.depth,
             stats.nodes_searched,
@@ -121,11 +131,29 @@ class ChessGUI:
             stats.nps,
             stats.evaluation,
         )
+        self._start_animation(move)
+
+    def _start_animation(self, move: chess.Move) -> None:
+        self._anim_move = move
+        self._anim_start = time.monotonic()
+
+    def _apply_animated_move(self) -> None:
+        if self._anim_move is None:
+            return
+        was_ai_turn = self.board.turn() == self.ai_color
+        move = self._anim_move
+        self.board.make_move(move)
+        self.last_move = move
+        self._anim_move = None
+        self._last_move_time = time.monotonic()
+        if was_ai_turn:
+            logger.info("AI played %s", move.uci())
 
     def _restart(self) -> None:
         logger.info("Restarting game.")
         self.board = Board.new_game()
         self.last_move = None
+        self._anim_move = None
         self.input_handler.reset()
         self.engine.reset()
 
@@ -134,12 +162,17 @@ class ChessGUI:
 
         selected = self.input_handler.selected_square
         targets = self.input_handler.legal_targets(self.board.raw) if selected is not None else []
+        anim_progress = 0.0
+        if self._anim_move is not None:
+            anim_progress = (time.monotonic() - self._anim_start) / ANIM_DURATION
         self.renderer.draw(
             self.screen,
             self.board.raw,
             selected_square=selected,
             legal_targets=targets,
             last_move=self.last_move,
+            anim_move=self._anim_move,
+            anim_progress=anim_progress,
         )
         self._draw_sidebar()
         pygame.display.flip()

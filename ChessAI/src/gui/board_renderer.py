@@ -86,6 +86,8 @@ class BoardRenderer:
         selected_square: Optional[chess.Square] = None,
         legal_targets: Optional[List[chess.Square]] = None,
         last_move: Optional[chess.Move] = None,
+        anim_move: Optional[chess.Move] = None,
+        anim_progress: float = 0.0,
     ) -> None:
         """Draw the full board state onto the given surface.
 
@@ -95,13 +97,16 @@ class BoardRenderer:
             selected_square: Currently selected square, if any.
             legal_targets: Squares the selected piece can legally move to.
             last_move: The most recently played move, for highlighting.
+            anim_move: A move currently being animated (piece slides along it).
+            anim_progress: Animation progress in [0, 1]; 0 is the start square,
+                1 is the destination.
         """
         legal_targets = legal_targets or []
         self._draw_squares(surface)
         self._highlight_last_move(surface, last_move)
         self._highlight_selected(surface, selected_square)
         self._highlight_check(surface, board)
-        self._draw_pieces(surface, board)
+        self._draw_pieces(surface, board, anim_move=anim_move, anim_progress=anim_progress)
         self._highlight_legal_targets(surface, board, legal_targets)
 
     def _draw_squares(self, surface: pygame.Surface) -> None:
@@ -158,19 +163,43 @@ class BoardRenderer:
             )
             surface.blit(dot_surface, (x, y))
 
-    def _draw_pieces(self, surface: pygame.Surface, board: chess.Board) -> None:
+    def _draw_pieces(
+        self,
+        surface: pygame.Surface,
+        board: chess.Board,
+        anim_move: Optional[chess.Move] = None,
+        anim_progress: float = 0.0,
+    ) -> None:
+        anim_center: Optional[Tuple[int, int]] = None
+        if anim_move is not None:
+            from_x, from_y = self.square_to_pixel(anim_move.from_square)
+            to_x, to_y = self.square_to_pixel(anim_move.to_square)
+            progress = min(max(anim_progress, 0.0), 1.0)
+            anim_center = (
+                int(from_x + (to_x - from_x) * progress + self.square_size // 2),
+                int(from_y + (to_y - from_y) * progress + self.square_size // 2),
+            )
+
         for square, piece in board.piece_map().items():
-            symbol = _PIECE_UNICODE[(piece.piece_type, piece.color)]
+            if anim_move is not None and square == anim_move.from_square:
+                continue  # Drawn separately at its animated position below.
             x, y = self.square_to_pixel(square)
-            text_color = (255, 255, 255) if piece.color == chess.WHITE else (30, 30, 30)
-            outline_color = (30, 30, 30) if piece.color == chess.WHITE else (255, 255, 255)
-            # Simple outline effect for legibility on both square colors.
-            for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
-                outline = self._piece_font.render(symbol, True, outline_color)
-                rect = outline.get_rect(
-                    center=(x + self.square_size // 2 + dx, y + self.square_size // 2 + dy)
-                )
-                surface.blit(outline, rect)
-            text_surface = self._piece_font.render(symbol, True, text_color)
-            rect = text_surface.get_rect(center=(x + self.square_size // 2, y + self.square_size // 2))
-            surface.blit(text_surface, rect)
+            self._draw_piece(surface, piece, (x + self.square_size // 2, y + self.square_size // 2))
+
+        if anim_center is not None:
+            moving_piece = board.piece_at(anim_move.from_square)
+            if moving_piece is not None:
+                self._draw_piece(surface, moving_piece, anim_center)
+
+    def _draw_piece(self, surface: pygame.Surface, piece: chess.Piece, center: Tuple[int, int]) -> None:
+        symbol = _PIECE_UNICODE[(piece.piece_type, piece.color)]
+        text_color = (255, 255, 255) if piece.color == chess.WHITE else (30, 30, 30)
+        outline_color = (30, 30, 30) if piece.color == chess.WHITE else (255, 255, 255)
+        # Simple outline effect for legibility on both square colors.
+        for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+            outline = self._piece_font.render(symbol, True, outline_color)
+            rect = outline.get_rect(center=(center[0] + dx, center[1] + dy))
+            surface.blit(outline, rect)
+        text_surface = self._piece_font.render(symbol, True, text_color)
+        rect = text_surface.get_rect(center=center)
+        surface.blit(text_surface, rect)
