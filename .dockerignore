@@ -1,0 +1,25 @@
+# VCS / IDE
+.git
+.gitignore
+.idea
+.vscode
+
+# Local virtualenv (4.5 GB) — never send to the build context
+.venv
+
+# Python
+__pycache__
+**/__pycache__
+*.py[cod]
+*.egg-info
+.pytest_cache
+.mypy_cache
+
+# Project runtime data (gitignored anyway; not needed in the image)
+ChessAI/checkpoints
+ChessAI/data
+ChessAI/models
+ChessAI/.pytest_cache
+
+# Dev artifacts at the repo root
+_sweep_tmp.py

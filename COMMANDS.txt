@@ -140,4 +140,42 @@ python ChessAI/src/main.py --mode self_play --games 100000 --train-every 100 --s
   ERROR: 'Event' object is not callable  (during self-play shutdown)
     Outdated code that shadows threading.Thread._stop. Update the repo
     (src/selfplay/inference.py now uses _stop_event).
+
+
+8) DOCKER (containerized web UI / self-play / benchmark)
+--------------------------------------------------------------------------------
+  Requires Docker Desktop (with WSL 2 integration) or the Docker Engine.
+  Run all Docker commands from the repo root (where Dockerfile lives).
+
+  Build the image:
+docker build -t chessai .
+
+  Run the web UI + engine API on http://localhost:8000:
+    docker compose up -d
+    docker compose down            # stop it
+
+  Run the test suite inside the container:
+    docker compose run --rm chessai pytest
+
+  Headless self-play training (GPU + persistent volumes):
+    docker compose run --rm chessai python src/main.py --mode self_play --games 50000 --workers 8
+
+  Data collection only:
+    docker compose run --rm chessai python src/main.py --mode self_play --games 10000 --no-train --no-evaluate
+
+  Benchmark (no training):
+    docker compose run --rm chessai python src/main.py --mode benchmark --games 10000
+
+  Run a plain container (no compose) with GPU + volumes:
+    docker run --rm --gpus all -p 8000:8000 \-v chessai-checkpoints:/app/checkpoints -v chessai-data:/app/data chessai
+
+  Without a GPU (CPU only): drop the `deploy:` GPU block in docker-compose.yml
+  (or omit --gpus) -- the image auto-detects the device.
+
+  Container data persists in named volumes:
+    chessai-checkpoints, chessai-data, chessai-models
+
+  WARNING: if `docker` is "not found in this WSL 2 distro", enable the WSL
+    integration in Docker Desktop Settings -> Resources -> WSL Integration,
+    then restart the terminal.
 ================================================================================

@@ -164,6 +164,48 @@ pytest -v
 encoding, replay buffer, dataset, trainer, checkpoint/resume, and an end-to-end
 self-play smoke run (including resume-after-interruption).
 
+## Docker
+
+The repo root ships a `Dockerfile`, `.dockerignore`, and `docker-compose.yml`.
+The image is built on `python:3.12-slim` with a **CUDA 12.6 PyTorch wheel**
+(`torch 2.13.0+cu126`, matching the dev venv); it runs on CPU-only hosts too
+via `resolve_device` auto-detection.
+
+```bash
+# Build
+docker build -t chessai .
+
+# Or build the compose service (same image)
+docker compose build
+
+# Run the web UI + engine API on http://localhost:8000
+docker compose up -d
+
+# Run the test suite inside the container
+docker compose run --rm chessai pytest
+
+# Headless self-play training (GPU + persistent volumes)
+docker compose run --rm chessai \
+    python src/main.py --mode self_play --games 50000 --workers 8
+
+# Benchmark (no training)
+docker compose run --rm chessai \
+    python src/main.py --mode benchmark --games 10000
+```
+
+Notes:
+
+- **GPU:** the compose file requests an NVIDIA GPU (`deploy.resources...`).
+  Requires the NVIDIA Container Toolkit on the host. On a machine without a
+  GPU, remove that `deploy` block — everything else still works on CPU.
+- **Persistence:** self-play checkpoints, replay data, and models are written
+  under `/app/checkpoints`, `/app/data`, and `/app/models`, which are mounted
+  as named volumes so training survives container restarts.
+- **Web binds `0.0.0.0`** by default so it is reachable from the host.
+- To run the PyGame GUI inside a container you need a display (e.g.
+  `-e DISPLAY=...` plus an X server); headless web / self-play / benchmark
+  modes do not require one.
+
 ## Data & Checkpoints
 
 | Path                  | Contents                                                    |

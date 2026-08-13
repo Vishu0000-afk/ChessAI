@@ -198,7 +198,9 @@ def main(argv=None) -> int:
     _ENGINE = _EngineWrapper(depth=args.depth, enabled=not args.no_engine)
 
     httpd = ThreadingHTTPServer((args.host, args.port), _Handler)
-    print(f"ChessAI web UI: http://{args.host}:{args.port}", flush=True)
+    # Show localhost/127.0.0.1 in the URL (not the bind address 0.0.0.0)
+    display_host = "localhost" if args.host == "0.0.0.0" else args.host
+    print(f"ChessAI web UI: http://{display_host}:{args.port}", flush=True)
     print(f"Engine: {'classical depth=%d' % args.depth if _ENGINE.enabled else 'disabled (JS fallback)'}", flush=True)
     try:
         httpd.serve_forever()
