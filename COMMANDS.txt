@@ -1,0 +1,87 @@
+================================================================================
+ ChessAI - Mode Switching Commands
+ ========================================================================
+ Run all commands from the project directory (ChessAI/):
+     cd ChessAI
+
+ Device flag: --device auto|cpu|cuda  (default auto = uses GPU when available)
+================================================================================
+
+1) HUMAN VS AI MODE (PyGame GUI)
+--------------------------------------------------------------------------------
+  python src/main.py
+  python src/main.py --mode human_vs_ai
+
+  Change the AI opponent:
+    python src/main.py --mode human_vs_ai --ai-agent classical   (alpha-beta engine)
+    python src/main.py --mode human_vs_ai --ai-agent neural      (neural network)
+    python src/main.py --mode human_vs_ai --ai-agent random      (random bot)
+
+  Other useful flags:
+    --depth 4            # classical engine search depth (plies)
+    --device cuda        # use GPU for the neural agent
+
+
+2) SELF-PLAY MODE (headless AI-vs-AI, continuous learning)
+--------------------------------------------------------------------------------
+  Quick smoke run (100 games):
+    python src/main.py --mode self_play --games 100 --no-resume
+
+  Full GPU training run:
+    python src/main.py --mode self_play --games 1000000 --workers 8 --device cuda
+
+  Data collection only (no training / no evaluation):
+    python src/main.py --mode self_play --games 10000 --no-train --no-evaluate
+
+  Resume from the latest checkpoint (default behavior):
+    python src/main.py --mode self_play --games 1000000 --workers 8
+
+  Start fresh (ignore existing checkpoints):
+    python src/main.py --mode self_play --games 1000000 --no-resume
+
+  Tune training cadence:
+    python src/main.py --mode self_play --games 100000 \
+        --train-every 100 --steps 100 --batch-size 512 --checkpoint-every 1000
+
+  Exploration temperature control:
+    python src/main.py --mode self_play --games 10000 --temperature 1.0
+
+  Control concurrency / workers (effective GPU batch size = workers * concurrency):
+    python src/main.py --mode self_play --games 100000 --workers 4 --concurrency 8
+
+
+3) BENCHMARK MODE (throughput, no training)
+--------------------------------------------------------------------------------
+  python src/main.py --mode benchmark --games 10000
+  python src/main.py --mode benchmark --games 100000 --workers 8 --device cuda
+
+
+4) CHANGE THE DEFAULT MODE (configs/config.py)
+--------------------------------------------------------------------------------
+  Edit ChessAI/configs/config.py:
+
+    GAME_MODE = "human_vs_ai"   # or "self_play" | "benchmark"
+
+  Then simply run:
+    python src/main.py
+
+
+5) COMMON FLAGS
+--------------------------------------------------------------------------------
+  --games N           total games to run
+  --workers N         number of worker processes
+  --device auto|cpu|cuda
+  --seed N            random seed
+  --no-resume         do not resume from latest checkpoint
+  --no-train          skip training (data collection only)
+  --no-evaluate       disable candidate evaluation/promotion
+  --ai-agent ...      human_vs_ai opponent (classical|neural|random)
+  --depth N           classical engine search depth
+  --temperature T     self-play exploration temperature
+  --train-every N     train every N games
+  --steps N           training steps per cycle
+  --batch-size N      training mini-batch size
+  --checkpoint-every N  checkpoint every N games
+  --replay-size N     replay buffer capacity
+  --concurrency N     games in flight per worker
+================================================================================
