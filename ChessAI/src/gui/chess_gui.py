@@ -21,15 +21,21 @@ from src.gui.input_handler import InputHandler
 
 logger = logging.getLogger(__name__)
 
-WINDOW_SIZE = 640
-SQUARE_SIZE = WINDOW_SIZE // 8
+WINDOW_WIDTH = 8 * 80 + 2 * 26  # board + coordinate gutters
+WINDOW_HEIGHT = WINDOW_WIDTH + 60  # board + gutters + sidebar
 SIDEBAR_HEIGHT = 60
+SQUARE_SIZE = 80
+GUTTER = 26
 FPS = 30
 AI_MOVE_DELAY = 2.0  # Seconds to wait after the last move before the AI plays.
 ANIM_DURATION = 0.5  # Seconds a piece takes to slide between squares.
 
-BACKGROUND_COLOR = (40, 40, 40)
-TEXT_COLOR = (230, 230, 230)
+BACKGROUND_COLOR = (228, 222, 208)  # light neutral beige
+TEXT_COLOR = (45, 45, 45)
+SIDEBAR_COLOR = (216, 210, 194)
+
+MIN_SQUARE_SIZE = 24
+MAX_SQUARE_SIZE = 100
 
 
 class ChessGUI:
@@ -51,12 +57,16 @@ class ChessGUI:
         """
         pygame.init()
         pygame.display.set_caption("ChessAI")
-        self.screen = pygame.display.set_mode((WINDOW_SIZE, WINDOW_SIZE + SIDEBAR_HEIGHT))
+        self.window_w = WINDOW_WIDTH
+        self.window_h = WINDOW_HEIGHT
+        self.screen = pygame.display.set_mode((self.window_w, self.window_h), pygame.RESIZABLE)
         self.clock = pygame.time.Clock()
 
         self.ai_color = ai_color
         self.human_color = not ai_color
-        self.renderer = BoardRenderer(SQUARE_SIZE, flipped=(self.human_color == chess.BLACK))
+        self.renderer = BoardRenderer(
+            SQUARE_SIZE, flipped=(self.human_color == chess.BLACK), gutter=GUTTER
+        )
         self.input_handler = InputHandler(self.renderer)
         if agent is None:
             from src.agents.classical_engine import ClassicalEngineAgent
@@ -102,8 +112,24 @@ class ChessGUI:
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_r:
                     self._restart()
+            elif event.type == pygame.VIDEORESIZE:
+                self._apply_resize(event.w, event.h)
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 self._handle_click(event.pos)
+
+    def _apply_resize(self, width: int, height: int) -> None:
+        """Recompute the square size/origin and rebuild the renderer layout."""
+        self.window_w, self.window_h = width, height
+        avail_w = width - 2 * GUTTER
+        avail_h = height - SIDEBAR_HEIGHT - 2 * GUTTER
+        board_px = min(avail_w, avail_h, 8 * MAX_SQUARE_SIZE)
+        board_px = max(board_px, 8 * MIN_SQUARE_SIZE)
+        sq = board_px // 8
+        board_px = sq * 8
+        ox = (width - board_px) // 2
+        oy = (height - SIDEBAR_HEIGHT - board_px) // 2
+        self.renderer.resize(sq, ox, oy)
+        self.screen = pygame.display.set_mode((width, height), pygame.RESIZABLE)
 
     def _handle_click(self, pos: tuple) -> None:
         if self._anim_move is not None:
@@ -114,7 +140,7 @@ class ChessGUI:
             return
 
         x, y = pos
-        if y >= WINDOW_SIZE:
+        if y >= self.window_h - SIDEBAR_HEIGHT:
             return  # Click landed in the sidebar area.
 
         move = self.input_handler.handle_click(self.board.raw, x, y)
@@ -202,8 +228,8 @@ class ChessGUI:
         pygame.display.flip()
 
     def _draw_sidebar(self) -> None:
-        y_offset = WINDOW_SIZE
-        pygame.draw.rect(self.screen, (25, 25, 25), (0, y_offset, WINDOW_SIZE, SIDEBAR_HEIGHT))
+        y_offset = self.window_h - SIDEBAR_HEIGHT
+        pygame.draw.rect(self.screen, SIDEBAR_COLOR, (0, y_offset, self.window_w, SIDEBAR_HEIGHT))
 
         status = self._status_text()
         text_surface = self._font.render(status, True, TEXT_COLOR)

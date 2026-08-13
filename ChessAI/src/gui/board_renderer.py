@@ -12,12 +12,16 @@ from typing import Dict, List, Optional, Tuple
 import chess
 import pygame
 
-LIGHT_SQUARE_COLOR = (240, 217, 181)
-DARK_SQUARE_COLOR = (181, 136, 99)
-SELECTED_COLOR = (246, 246, 105)
-LEGAL_MOVE_COLOR = (106, 168, 79)
-LAST_MOVE_COLOR = (205, 210, 106)
-CHECK_COLOR = (220, 80, 80)
+# Flat classic palette: deep forest green + warm cream, thin boundaries.
+LIGHT_SQUARE_COLOR = (241, 231, 204)  # warm ivory/cream
+DARK_SQUARE_COLOR = (73, 110, 84)  # deep muted forest green
+GRID_COLOR = (56, 88, 68)  # subtle 1px boundary between squares
+BORDER_COLOR = (168, 162, 148)  # subtle neutral beige outer frame
+COORD_COLOR = (45, 50, 44)  # dark gray coordinate labels
+SELECTED_COLOR = (255, 210, 92)  # warm gold
+LEGAL_MOVE_COLOR = (255, 255, 255)  # soft white dots/rings
+LAST_MOVE_COLOR = (232, 192, 66)  # muted yellow
+CHECK_COLOR = (232, 64, 64)
 
 _PIECE_UNICODE: Dict[Tuple[chess.PieceType, chess.Color], str] = {
     (chess.PAWN, chess.WHITE): "\u2659",
@@ -38,20 +42,34 @@ _PIECE_UNICODE: Dict[Tuple[chess.PieceType, chess.Color], str] = {
 class BoardRenderer:
     """Draws a chess board, pieces, and highlights onto a PyGame surface."""
 
-    def __init__(self, square_size: int, flipped: bool = False) -> None:
+    def __init__(self, square_size: int, flipped: bool = False, gutter: int = 0) -> None:
         """Create a renderer.
 
         Args:
             square_size: Pixel size of one board square.
             flipped: If True, render from Black's point of view.
+            gutter: Margin reserved around the board for coordinates.
         """
         self.square_size = square_size
         self.flipped = flipped
+        self.gutter = gutter
+        self.origin_x = gutter
+        self.origin_y = gutter
         pygame.font.init()
-        self._piece_font = pygame.font.SysFont("segoeuisymbol", int(square_size * 0.7))
+        self._init_fonts()
+
+    def _init_fonts(self) -> None:
+        self._piece_font = pygame.font.SysFont("segoeuisymbol", int(self.square_size * 0.72))
         if self._piece_font is None:
-            self._piece_font = pygame.font.Font(None, int(square_size * 0.7))
-        self._label_font = pygame.font.SysFont("arial", 16)
+            self._piece_font = pygame.font.Font(None, int(self.square_size * 0.72))
+        self._label_font = pygame.font.SysFont("arial", 15)
+
+    def resize(self, square_size: int, origin_x: int, origin_y: int) -> None:
+        """Update layout after a window resize; keeps the same orientation."""
+        self.square_size = square_size
+        self.origin_x = origin_x
+        self.origin_y = origin_y
+        self._init_fonts()
 
     def square_to_pixel(self, square: chess.Square) -> Tuple[int, int]:
         """Convert a chess square to top-left pixel coordinates."""
@@ -63,12 +81,12 @@ class BoardRenderer:
         else:
             col = file_idx
             row = 7 - rank_idx
-        return col * self.square_size, row * self.square_size
+        return self.origin_x + col * self.square_size, self.origin_y + row * self.square_size
 
     def pixel_to_square(self, x: int, y: int) -> Optional[chess.Square]:
         """Convert pixel coordinates to a chess square, or None if out of bounds."""
-        col = x // self.square_size
-        row = y // self.square_size
+        col = (x - self.origin_x) // self.square_size
+        row = (y - self.origin_y) // self.square_size
         if not (0 <= col <= 7 and 0 <= row <= 7):
             return None
         if self.flipped:
@@ -111,12 +129,21 @@ class BoardRenderer:
         self._highlight_legal_targets(surface, board, legal_targets)
 
     def _draw_squares(self, surface: pygame.Surface) -> None:
+        sq = self.square_size
+        ox, oy = self.origin_x, self.origin_y
+        board_px = sq * 8
+        # Thin neutral outer frame.
+        pygame.draw.rect(surface, BORDER_COLOR, (ox - 2, oy - 2, board_px + 4, board_px + 4))
         for rank in range(8):
             for file in range(8):
                 square = chess.square(file, rank)
                 x, y = self.square_to_pixel(square)
                 color = LIGHT_SQUARE_COLOR if (file + rank) % 2 == 0 else DARK_SQUARE_COLOR
-                pygame.draw.rect(surface, color, (x, y, self.square_size, self.square_size))
+                pygame.draw.rect(surface, color, (x, y, sq, sq))
+        # Subtle 1px boundaries between squares.
+        for i in range(1, 8):
+            pygame.draw.line(surface, GRID_COLOR, (ox + i * sq, oy), (ox + i * sq, oy + board_px))
+            pygame.draw.line(surface, GRID_COLOR, (ox, oy + i * sq), (ox + board_px, oy + i * sq))
 
     def _highlight_selected(self, surface: pygame.Surface, selected_square: Optional[chess.Square]) -> None:
         if selected_square is None:
@@ -147,18 +174,38 @@ class BoardRenderer:
         surface.blit(highlight, (x, y))
 
     def _draw_coordinates(self, surface: pygame.Surface) -> None:
-        """Draw file letters (a-h) along the bottom and rank numbers (1-8) on the left."""
-        label_color = (0, 0, 0)
-        for file in range(8):
-            square = chess.square(file, 0)
-            x, y = self.square_to_pixel(square)
-            label = self._label_font.render(chess.FILE_NAMES[file], True, label_color)
-            surface.blit(label, (x + 3, y + self.square_size - label.get_height() - 3))
-        for rank in range(8):
-            square = chess.square(0, rank)
-            x, y = self.square_to_pixel(square)
-            label = self._label_font.render(chess.RANK_NAMES[rank], True, label_color)
-            surface.blit(label, (x + 3, y + 3))
+        """Draw file letters (a-h) centered above/below each column and rank
+        numbers (1-8) centered beside each row, in the margin around the
+        board. Labels track the current orientation automatically."""
+        sq = self.square_size
+        ox, oy = self.origin_x, self.origin_y
+        board_px = sq * 8
+
+        for col in range(8):
+            bx = ox + col * sq + sq // 2
+            top_square = self.pixel_to_square(bx, oy)
+            bottom_square = self.pixel_to_square(bx, oy + board_px - 1)
+            if top_square is None:
+                continue
+            file_name = chess.FILE_NAMES[chess.square_file(top_square)]
+            label = self._label_font.render(file_name, True, COORD_COLOR)
+            # Top and bottom edges.
+            surface.blit(label, (bx - label.get_width() // 2, oy - label.get_height() - 4))
+            if bottom_square is not None:
+                surface.blit(label, (bx - label.get_width() // 2, oy + board_px + 3))
+
+        for row in range(8):
+            by = oy + row * sq + sq // 2
+            left_square = self.pixel_to_square(ox + 1, by)
+            right_square = self.pixel_to_square(ox + board_px - 1, by)
+            if left_square is None:
+                continue
+            rank_name = chess.RANK_NAMES[chess.square_rank(left_square)]
+            label = self._label_font.render(rank_name, True, COORD_COLOR)
+            # Left and right edges.
+            surface.blit(label, (ox - label.get_width() - 5, by - label.get_height() // 2))
+            if right_square is not None:
+                surface.blit(label, (ox + board_px + 5, by - label.get_height() // 2))
 
     def _highlight_legal_targets(
         self, surface: pygame.Surface, board: chess.Board, legal_targets: List[chess.Square]
