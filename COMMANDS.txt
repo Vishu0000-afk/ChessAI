@@ -16,7 +16,7 @@
  --------------------------------------------------------------------------------
   If self-play/benchmark fails with "Torch not compiled with CUDA enabled",
   your venv has a CPU-only torch build. Reinstall a CUDA build (RTX 4050 etc.):
-
+#run nvidia-smi to check your cuda version and edit the last three digit according to it
     pip install --force-reinstall torch==2.13.0+cu126 --index-url https://download.pytorch.org/whl/cu126
 
   Verify the GPU is seen:
@@ -58,7 +58,6 @@
     python ChessAI/src/main.py --mode self_play --games 10000 --no-train --no-evaluate
 
   Resume from the latest checkpoint (default behavior):
-    python ChessAI/src/main.py --mode self_play --games 50000 --workers 8
 
   Start fresh (ignore existing checkpoints):
     python ChessAI/src/main.py --mode self_play --games 1000000 --no-resume
