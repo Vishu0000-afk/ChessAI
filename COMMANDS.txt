@@ -52,7 +52,7 @@
     python ChessAI/src/main.py --mode self_play --games 100 --no-resume
 
   Full GPU training run:
-    python ChessAI/src/main.py --mode self_play --games 50000 --workers 8 --device cuda
+    python ChessAI/src/main.py --mode self_play --games 1000 --workers 8 --device cuda
 
   Data collection only (no training / no evaluation):
     python ChessAI/src/main.py --mode self_play --games 10000 --no-train --no-evaluate

@@ -41,6 +41,7 @@ class Learner:
         learning_rate: float = 1e-3,
         weight_decay: float = 1e-4,
         use_mixed_precision: bool = True,
+        mirror_augmentation: bool = True,
         compute_lock: Optional[threading.Lock] = None,
     ) -> None:
         self.model = model
@@ -56,6 +57,7 @@ class Learner:
             learning_rate=learning_rate,
             weight_decay=weight_decay,
             use_mixed_precision=use_mixed_precision,
+            mirror_augmentation=mirror_augmentation,
             compute_lock=compute_lock,
         )
 

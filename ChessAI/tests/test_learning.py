@@ -18,6 +18,9 @@ from src.learning.encoding import (
     encode_board,
     encode_board_batch,
     legal_move_mask,
+    mirror_mask_packed,
+    mirror_move_indices,
+    mirror_planes,
     move_to_index,
     pack_mask,
     unpack_mask,
@@ -45,7 +48,34 @@ def test_encode_board_shape_and_channel_count():
 def test_move_index_round_trip():
     board = chess.Board()
     for move in list(board.legal_moves)[:5]:
-        assert move.from_square * 64 + move.to_square == move_to_index(move)
+        assert move.from_square * 64 + move.to_square == move_to_index(move, board.turn)
+
+
+def test_encode_board_color_relative_symmetry():
+    # A position and its 180-degree-rotated, color-swapped counterpart must
+    # encode to the identical tensor: the network is color-invariant.
+    # (Castling flags are excluded here; their transposition is tested below.)
+    mid = chess.Board("r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w - - 3 3")
+    mid_mirror = chess.Board()
+    mid_mirror.clear()
+    mid_mirror.turn = chess.BLACK
+    for sq, piece in mid.piece_map().items():
+        mid_mirror.set_piece_at(63 - sq, chess.Piece(piece.piece_type, not piece.color))
+    np.testing.assert_array_equal(encode_board(mid), encode_board(mid_mirror))
+
+
+def test_encode_board_castling_flags_transposed():
+    # Black-to-move: our kingside/queenside come from Black's flags, the
+    # opponent planes from White's flags (side-relative frame).
+    board = chess.Board("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b K - 0 1")
+    x = encode_board(board)
+    assert x[17].all()  # opponent kingside (original White "K")
+    assert not x[14].any() and not x[15].any() and not x[16].any()
+
+    board2 = chess.Board("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w Q - 0 1")
+    x2 = encode_board(board2)
+    assert x2[15].all()  # our queenside (White "Q")
+    assert not x2[14].any() and not x2[16].any() and not x2[17].any()
 
 
 def test_legal_mask_round_trip():
@@ -65,7 +95,34 @@ def test_legal_mask_promotion_position():
     promo = [m for m in board.legal_moves if m.to_square == chess.A8]
     assert len(promo) == 4
     for m in promo:
-        assert mask[move_to_index(m)]
+        assert mask[move_to_index(m, board.turn)]
+
+
+def test_mirror_augmentation_helpers_are_involutions():
+    board = chess.Board("r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 3 3")
+    planes = encode_board(board)
+    np.testing.assert_array_equal(mirror_planes(mirror_planes(planes)), planes)
+
+    mask = legal_move_mask(board)
+    packed = pack_mask(mask)
+    np.testing.assert_array_equal(mirror_mask_packed(mirror_mask_packed(packed)), packed)
+
+    idx = np.array([move_to_index(m, board.turn) for m in list(board.legal_moves)[:5]])
+    np.testing.assert_array_equal(mirror_move_indices(mirror_move_indices(idx)), idx)
+
+
+def test_mirror_augmentation_keeps_legal_mask_consistent():
+    # A mirrored legal mask is exactly the mask of the mirrored position.
+    board = chess.Board("r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w - - 3 3")
+    mirrored = chess.Board()
+    mirrored.clear()
+    for sq, piece in board.piece_map().items():
+        mirrored.set_piece_at((sq // 8) * 8 + (7 - (sq % 8)), piece)
+    mirrored.turn = board.turn
+    np.testing.assert_array_equal(
+        mirror_mask_packed(pack_mask(legal_move_mask(board))),
+        pack_mask(legal_move_mask(mirrored)),
+    )
 
 
 # ----------------------------------------------------------------------
@@ -77,7 +134,7 @@ def _sample(board=None, version=1):
     move = moves[0]
     return {
         "input": encode_board(board),
-        "move_index": move_to_index(move),
+        "move_index": move_to_index(move, board.turn),
         "legal_packed": pack_mask(legal_move_mask(board)),
         "value": 1.0,
         "version": version,

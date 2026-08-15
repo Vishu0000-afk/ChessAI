@@ -9,7 +9,7 @@ import torch
 
 from configs.config import SelfPlayConfig
 from src.learning.network import create_chess_net
-from src.selfplay.coordinator import SelfPlayCoordinator
+from src.selfplay.coordinator import SelfPlayCoordinator, drop_excess_draw
 from src.selfplay.evaluator import evaluate_models
 from src.selfplay.inference import InferenceClient, InferenceServer
 from src.selfplay.worker import BatchedGameSimulator
@@ -159,6 +159,43 @@ def test_evaluator_reports_sane_counts():
         server.join(timeout=5)
         request_queue.close()
         result_queue.close()
+
+
+# ----------------------------------------------------------------------
+# Draw cap / color rebalancing
+# ----------------------------------------------------------------------
+def _draw_game():
+    return {
+        "result": "1/2-1/2",
+        "moves": 30,
+        "samples": [
+            {"color": chess.WHITE, "value": 0.0, "move_index": 0, "version": 1},
+            {"color": chess.BLACK, "value": 0.0, "move_index": 1, "version": 1},
+        ],
+    }
+
+
+def test_drop_excess_draw_kept_below_cap():
+    game = _draw_game()
+    assert not drop_excess_draw(game, draws=0, games=0, draw_max_rate=0.2)
+    assert not drop_excess_draw(game, draws=1, games=9, draw_max_rate=0.2)  # 0.111 < 0.2
+
+
+def test_drop_excess_draw_at_cap():
+    # 2 draws / 10 games = 0.2 (at cap) -> dropped.
+    game = _draw_game()
+    assert drop_excess_draw(game, draws=2, games=10, draw_max_rate=0.2)
+
+
+def test_drop_excess_draw_over_cap():
+    # 5 draws / 10 games = 0.5 > 0.2 -> dropped.
+    game = _draw_game()
+    assert drop_excess_draw(game, draws=5, games=10, draw_max_rate=0.2)
+
+
+def test_drop_excess_draw_ignores_decisive_games():
+    game = {"result": "1-0", "moves": 20, "samples": []}
+    assert not drop_excess_draw(game, draws=10, games=10, draw_max_rate=0.2)
 
 
 # ----------------------------------------------------------------------

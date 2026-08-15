@@ -96,7 +96,7 @@ class BatchedGameSimulator:
 
             sample = {
                 "input": encode_board(board),
-                "move_index": move_to_index(move),
+                "move_index": move_to_index(move, board.turn),
                 "legal_packed": pack_mask(legal_move_mask(board)),
                 "color": board.turn,
                 "version": game["agent"].version or 0,

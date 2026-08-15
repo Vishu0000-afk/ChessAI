@@ -51,14 +51,22 @@ SELF_PLAY_CONCURRENCY: int = 4
 GAMES_TOTAL: int = 10_000
 
 # Exploration temperature. Values >= 1 encourage exploration; decays linearly
-# towards TEMP_FINAL over TEMP_DECAY_GAMES self-play games.
+# towards TEMP_FINAL over TEMP_DECAY_GAMES self-play games. Decay should span
+# roughly 60-80% of the total run so exploration does not die just as the
+# model starts to strengthen (a common cause of self-play color collapse).
 TEMPERATURE: float = 1.0
-TEMP_FINAL: float = 0.1
-TEMP_DECAY_GAMES: int = 10_000
+TEMP_FINAL: float = 0.3
+TEMP_DECAY_GAMES: int = 20_000
 
 # Hard cap on moves per game (avoids endless shuffling). Games that hit the
 # cap count as a draw for learning targets and statistics.
 MAX_GAME_MOVES: int = 400
+
+# Maximum share of self-play games that may count as draws. When the running
+# draw rate reaches this ceiling, excess draw games are converted into wins
+# for the color that is currently winning less (see coordinator). This keeps
+# the training signal decisive and rebalances the white/black distribution.
+DRAW_MAX_RATE: float = 0.2
 
 # =============================================================================
 # Neural network / learning
@@ -69,13 +77,13 @@ NN_CONV_CHANNELS: int = 64
 NN_RES_BLOCKS: int = 2  # residual blocks stacked on the convolutional trunk
 
 # Batched inference tuning.
-INFERENCE_MAX_BATCH: int = 512  # max positions per GPU/CPU forward pass
+INFERENCE_MAX_BATCH: int = 5000  # max positions per GPU/CPU forward pass
 INFERENCE_POLL_SECONDS: float = 0.001
 
 # Training.
 REPLAY_BUFFER_SIZE: int = 1_000_000
 TRAIN_EVERY_N_GAMES: int = 100
-BATCH_SIZE: int = 512
+BATCH_SIZE: int = 5000
 TRAINING_STEPS: int = 100
 LEARNING_RATE: float = 1e-3
 WEIGHT_DECAY: float = 1e-4
@@ -85,6 +93,10 @@ EXPERIENCE_FLUSH_GAMES: int = 1
 
 # Mixed precision: float16 on CUDA, bfloat16 on CPU.
 USE_MIXED_PRECISION: bool = True
+
+# Mirror (horizontal file flip) ~50% of each training batch so the network
+# learns board symmetry and needs half the data to master it.
+USE_MIRROR_AUGMENTATION: bool = True
 
 # =============================================================================
 # Checkpoints / model versioning
@@ -171,6 +183,7 @@ class SelfPlayConfig:
     temp_final: float = TEMP_FINAL
     temp_decay_games: int = TEMP_DECAY_GAMES
     max_game_moves: int = MAX_GAME_MOVES
+    draw_max_rate: float = DRAW_MAX_RATE
 
     replay_buffer_size: int = REPLAY_BUFFER_SIZE
     train_every_n_games: int = TRAIN_EVERY_N_GAMES
@@ -179,6 +192,7 @@ class SelfPlayConfig:
     learning_rate: float = LEARNING_RATE
     weight_decay: float = WEIGHT_DECAY
     use_mixed_precision: bool = USE_MIXED_PRECISION
+    use_mirror_augmentation: bool = USE_MIRROR_AUGMENTATION
 
     nn_conv_channels: int = NN_CONV_CHANNELS
     nn_res_blocks: int = NN_RES_BLOCKS

@@ -143,7 +143,7 @@ def _argmax_move(board: chess.Board, logits: np.ndarray) -> Optional[chess.Move]
     best = None
     best_val = -1e18
     for m in moves:
-        v = float(logits[move_to_index(m)])
+        v = float(logits[move_to_index(m, board.turn)])
         if v > best_val:
             best_val = v
             best = m

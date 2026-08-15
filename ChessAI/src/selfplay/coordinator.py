@@ -60,6 +60,20 @@ def _ensure_mp_start_method(device: str) -> None:
             logger.warning("Could not switch to 'spawn' start method; fork may be unsafe with CUDA.")
 
 
+def drop_excess_draw(game: dict, draws: int, games: int, draw_max_rate: float) -> bool:
+    """Return True when a drawn game should be discarded.
+
+    Draws are allowed while the running draw rate (draws / games) stays below
+    ``draw_max_rate``. Once the cap is reached, additional draw games are
+    dropped entirely (their samples are not stored and they do not count as
+    draws), keeping the training signal decisive without rebalancing colors.
+    """
+    if game["result"] != "1/2-1/2":
+        return False
+    draw_rate = draws / games if games else 0.0
+    return draw_rate >= draw_max_rate
+
+
 class SelfPlayCoordinator:
     """Runs headless AI-vs-AI self-play with continuous learning."""
 
@@ -90,6 +104,7 @@ class SelfPlayCoordinator:
             learning_rate=config.learning_rate,
             weight_decay=config.weight_decay,
             use_mixed_precision=config.use_mixed_precision,
+            mirror_augmentation=config.use_mirror_augmentation,
             compute_lock=self.compute_lock,
         )
         self.server: Optional[InferenceServer] = None
@@ -231,7 +246,15 @@ class SelfPlayCoordinator:
             except queue_mod.Empty:
                 break
             for game in msg["games"]:
+                if drop_excess_draw(game, self.stats.draws, self.stats.games, self.config.draw_max_rate):
+                    self.stats.games += 1
+                    self.stats.moves += game["moves"]
+                    self.stats.samples += len(game["samples"])
+                    drained += 1
+                    continue
                 self.stats.record_game(game["result"], game["moves"], len(game["samples"]))
+                for s in game["samples"]:
+                    s.pop("color", None)
                 self.replay_buffer.extend(game["samples"])
                 self.chunk_writer.add(game["samples"])
                 drained += 1

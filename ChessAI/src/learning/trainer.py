@@ -21,6 +21,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from src.learning.encoding import mirror_mask_packed, mirror_move_indices, mirror_planes
 from src.learning.replay_buffer import ReplayBuffer
 
 logger = logging.getLogger(__name__)
@@ -39,6 +40,7 @@ class Trainer:
         learning_rate: float = 1e-3,
         weight_decay: float = 1e-4,
         use_mixed_precision: bool = True,
+        mirror_augmentation: bool = True,
         compute_lock: Optional[threading.Lock] = None,
     ) -> None:
         self.model = model
@@ -46,6 +48,7 @@ class Trainer:
         self.model.to(self.device)
         self.batch_size = batch_size
         self.use_mixed_precision = use_mixed_precision
+        self.mirror_augmentation = mirror_augmentation
         self.compute_lock = compute_lock
         self.optimizer = torch.optim.Adam(
             model.parameters(), lr=learning_rate, weight_decay=weight_decay
@@ -56,9 +59,21 @@ class Trainer:
     def train_step(self, buffer: ReplayBuffer, rng: Optional[np.random.Generator] = None) -> dict:
         """One optimizer step on a random mini-batch from the replay buffer."""
         batch = buffer.sample(self.batch_size, rng=rng)
-        inputs = torch.from_numpy(np.ascontiguousarray(batch["input"])).to(self.device)
-        move_targets = torch.from_numpy(batch["move_index"].astype(np.int64)).to(self.device)
-        legal_packed = torch.from_numpy(batch["legal_packed"].astype(np.int64)).to(self.device)
+        inputs = batch["input"]
+        move_targets = batch["move_index"]
+        legal_packed = batch["legal_packed"]
+
+        if self.mirror_augmentation:
+            rng = rng or np.random.default_rng()
+            mirror = rng.random(self.batch_size) < 0.5
+            if mirror.any():
+                inputs[mirror] = mirror_planes(inputs[mirror])
+                move_targets[mirror] = mirror_move_indices(move_targets[mirror])
+                legal_packed[mirror] = mirror_mask_packed(legal_packed[mirror])
+
+        inputs = torch.from_numpy(np.ascontiguousarray(inputs)).to(self.device)
+        move_targets = torch.from_numpy(move_targets.astype(np.int64)).to(self.device)
+        legal_packed = torch.from_numpy(legal_packed.astype(np.int64)).to(self.device)
         value_targets = torch.from_numpy(batch["value"]).to(self.device).unsqueeze(1)
 
         lock = self.compute_lock or nullcontext()

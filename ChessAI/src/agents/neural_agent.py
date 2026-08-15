@@ -53,7 +53,9 @@ class NeuralAgent(ChessAgent):
 
     def _select_from_logits(self, board: chess.Board, moves: List[chess.Move], logits: np.ndarray) -> chess.Move:
         """Sample/argmax a legal move from masked policy logits."""
-        move_logits = np.array([logits[move_to_index(m)] for m in moves], dtype=np.float64)
+        move_logits = np.array(
+            [logits[move_to_index(m, board.turn)] for m in moves], dtype=np.float64
+        )
         probs = _softmax(move_logits / max(self.temperature, EPSILON))
 
         if self.temperature <= 0.0:
@@ -63,11 +65,11 @@ class NeuralAgent(ChessAgent):
         return moves[int(choice)]
 
     @staticmethod
-    def mask_logits(logits: np.ndarray, legal: List[chess.Move]) -> np.ndarray:
+    def mask_logits(logits: np.ndarray, legal: List[chess.Move], stm: int = chess.WHITE) -> np.ndarray:
         """Set policy logits of illegal moves to -inf (for training loss)."""
         masked = np.full(POLICY_SIZE, -1e9, dtype=np.float32)
         for m in legal:
-            masked[move_to_index(m)] = logits[move_to_index(m)]
+            masked[move_to_index(m, stm)] = logits[move_to_index(m, stm)]
         return masked
 
 
