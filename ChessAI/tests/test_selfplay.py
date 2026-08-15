@@ -12,6 +12,7 @@ from src.learning.network import create_chess_net
 from src.selfplay.coordinator import SelfPlayCoordinator, drop_excess_draw
 from src.selfplay.evaluator import evaluate_models
 from src.selfplay.inference import InferenceClient, InferenceServer
+from src.selfplay.statistics import SelfPlayStats
 from src.selfplay.worker import BatchedGameSimulator
 
 
@@ -196,6 +197,125 @@ def test_drop_excess_draw_over_cap():
 def test_drop_excess_draw_ignores_decisive_games():
     game = {"result": "1-0", "moves": 20, "samples": []}
     assert not drop_excess_draw(game, draws=10, games=10, draw_max_rate=0.2)
+
+
+# ----------------------------------------------------------------------
+# Honest draw reporting (dropped draws counted separately)
+# ----------------------------------------------------------------------
+def test_stats_tracks_dropped_draws_and_reports_true_draw_rate():
+    stats = SelfPlayStats()
+    stats.record_game("1-0", 30, 30)
+    stats.record_game("1/2-1/2", 40, 40)
+    stats.record_dropped_draw(50, 50)
+    stats.record_dropped_draw(60, 60)
+
+    rates = stats.result_rates()
+    assert stats.games == 4
+    assert stats.draws_dropped == 2
+    # True draw share includes kept + dropped draws.
+    assert rates["draws"] == 3 / 4
+    assert rates["white"] == 1 / 4
+    assert rates["black"] == 0.0
+
+
+def test_coordinator_drop_uses_dropped_draw_counter(tmp_path):
+    cfg = _tiny_config(tmp_path)
+    coordinator = SelfPlayCoordinator(cfg)
+    # A stream of 4 drawn games, all beyond the draw cap, must increment the
+    # dropped counter (not the kept-draw counter) and still count the games.
+    for _ in range(4):
+        game = _draw_game()
+        if drop_excess_draw(game, coordinator.stats.draws, coordinator.stats.games, cfg.draw_max_rate):
+            coordinator.stats.record_dropped_draw(game["moves"], len(game["samples"]))
+        else:
+            coordinator.stats.record_game(game["result"], game["moves"], len(game["samples"]))
+    assert coordinator.stats.games == 4
+    assert coordinator.stats.draws == 1  # first draw is below the cap, so kept
+    assert coordinator.stats.draws_dropped == 3
+
+
+# ----------------------------------------------------------------------
+# Random opening + Dirichlet noise (self-play draw collapse mitigation)
+# ----------------------------------------------------------------------
+def test_neural_agent_dirichlet_defaults_off():
+    from src.agents.neural_agent import NeuralAgent
+    from src.agents.predictor import LocalPredictor
+
+    agent = NeuralAgent(LocalPredictor(_tiny_model().eval(), device="cpu"))
+    assert agent.dirichlet_epsilon == 0.0  # eval/other paths unaffected by default
+
+
+def test_random_open_plies_overrides_policy():
+    from src.agents.predictor import LocalPredictor
+
+    # A constant-logit predictor would otherwise make both runs identical.
+    class ConstantPredictor:
+        def predict_batch(self, boards, encoded=None):
+            return np.zeros((len(boards), 4096), dtype=np.float32), np.zeros(len(boards))
+
+    first = BatchedGameSimulator(
+        ConstantPredictor(), concurrency=1, temperature=1.0,
+        max_game_moves=50, model_version=1,
+        rng=np.random.default_rng(0), random_open_plies=4,
+    )
+    second = BatchedGameSimulator(
+        ConstantPredictor(), concurrency=1, temperature=1.0,
+        max_game_moves=50, model_version=1,
+        rng=np.random.default_rng(1), random_open_plies=4,
+    )
+    first.run_games(1)
+    second.run_games(1)
+    g1 = first.completed_games[0]["board"].move_stack[:4]
+    g2 = second.completed_games[0]["board"].move_stack[:4]
+    # Different seeds must produce different random openings.
+    assert [m.uci() for m in g1] != [m.uci() for m in g2]
+
+
+# ----------------------------------------------------------------------
+# Capped games scored by material for the value target
+# ----------------------------------------------------------------------
+def _capped_game(fen, max_game_moves=400):
+    from src.selfplay.worker import BatchedGameSimulator
+
+    sim = BatchedGameSimulator(None, concurrency=1, temperature=1.0,
+                               max_game_moves=max_game_moves, model_version=1)
+    return sim, {
+        "board": chess.Board(fen),
+        "move_count": max_game_moves,
+        "samples": [
+            {"color": chess.WHITE, "move_index": 0, "version": 1},
+            {"color": chess.BLACK, "move_index": 1, "version": 1},
+        ],
+    }
+
+
+def test_capped_game_with_material_lead_gets_decisive_values():
+    sim, game = _capped_game("4k3/8/8/8/8/8/8/Q3K3 w - - 0 1")  # white up a queen
+    sim._finish_game(game)
+    assert game["result"] == "1/2-1/2"  # still a draw for statistics
+    # samples[0] was White to move, samples[1] Black to move.
+    assert game["samples"][0]["value"] == 1.0
+    assert game["samples"][1]["value"] == -1.0
+
+
+def test_capped_game_with_equal_material_stays_draw():
+    sim, game = _capped_game("7k/8/8/8/8/8/8/7K w - - 0 1")  # bare kings
+    sim._finish_game(game)
+    assert game["result"] == "1/2-1/2"
+    assert game["samples"][0]["value"] == 0.0
+    assert game["samples"][1]["value"] == 0.0
+
+
+def test_run_games_move_count_is_not_double_counted():
+    from src.agents.predictor import LocalPredictor
+
+    model = _tiny_model().eval()
+    sim = BatchedGameSimulator(LocalPredictor(model, device="cpu"),
+                               concurrency=2, temperature=1.0,
+                               max_game_moves=50, model_version=1)
+    stats = sim.run_games(4)
+    expected = sum(g["move_count"] for g in sim.completed_games)
+    assert stats["moves"] == expected  # regression: [-0:] re-summed all games
 
 
 # ----------------------------------------------------------------------

@@ -68,6 +68,17 @@ MAX_GAME_MOVES: int = 400
 # the training signal decisive and rebalances the white/black distribution.
 DRAW_MAX_RATE: float = 0.2
 
+# Number of uniformly random plies played at the start of every self-play game.
+# Stops two identical near-deterministic policies from following one fixed line
+# straight into a repetition draw (the "self-play draw collapse").
+SELF_PLAY_RANDOM_OPEN_PLIES: int = 8
+
+# Dirichlet noise mixed into the sampled policy during self-play (AlphaZero-style:
+# eps * Dir(alpha) + (1 - eps) * policy). Keeps play stochastic after the opening
+# so deterministic models cannot lock into a repeating position cycle.
+DIRICHLET_EPSILON: float = 0.25
+DIRICHLET_ALPHA: float = 0.03
+
 # =============================================================================
 # Neural network / learning
 # =============================================================================
@@ -184,6 +195,9 @@ class SelfPlayConfig:
     temp_decay_games: int = TEMP_DECAY_GAMES
     max_game_moves: int = MAX_GAME_MOVES
     draw_max_rate: float = DRAW_MAX_RATE
+    self_play_random_open_plies: int = SELF_PLAY_RANDOM_OPEN_PLIES
+    dirichlet_epsilon: float = DIRICHLET_EPSILON
+    dirichlet_alpha: float = DIRICHLET_ALPHA
 
     replay_buffer_size: int = REPLAY_BUFFER_SIZE
     train_every_n_games: int = TRAIN_EVERY_N_GAMES

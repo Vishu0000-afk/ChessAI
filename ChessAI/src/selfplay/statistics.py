@@ -23,6 +23,7 @@ class SelfPlayStats:
         self.white_wins = 0
         self.black_wins = 0
         self.draws = 0
+        self.draws_dropped = 0
         self.training_steps = 0
         self.model_version = 0
         self.promotions = 0
@@ -46,6 +47,13 @@ class SelfPlayStats:
         else:
             self.draws += 1
 
+    def record_dropped_draw(self, moves: int, samples: int) -> None:
+        """Count a drawn game discarded by the draw cap (kept out of training)."""
+        self.games += 1
+        self.moves += moves
+        self.samples += samples
+        self.draws_dropped += 1
+
     def rates(self) -> Dict[str, float]:
         elapsed = max(time.monotonic() - self.start_time, 1e-9)
         play_elapsed = max(elapsed - self.train_seconds, 1e-9)
@@ -61,7 +69,7 @@ class SelfPlayStats:
         return {
             "white": self.white_wins / total,
             "black": self.black_wins / total,
-            "draws": self.draws / total,
+            "draws": (self.draws + self.draws_dropped) / total,
         }
 
     def snapshot(self) -> Dict[str, object]:
@@ -78,6 +86,7 @@ class SelfPlayStats:
             "white_wins": self.white_wins,
             "black_wins": self.black_wins,
             "draws": self.draws,
+            "draws_dropped": self.draws_dropped,
             "white_rate": rr["white"],
             "black_rate": rr["black"],
             "draw_rate": rr["draws"],
@@ -111,6 +120,8 @@ class Dashboard:
     def _print(self, stats: SelfPlayStats) -> None:
         s = stats.snapshot()
         rates = s["games_per_sec"]
+        kept = s["draws"] / max(s["games"], 1)
+        dropped = s["draws_dropped"] / max(s["games"], 1)
         panel = (
             "\n============== ChessAI Self-Play ==============\n"
             f"Games:        {s['games']:>12,}\n"
@@ -121,7 +132,7 @@ class Dashboard:
             f"Training:     {s['training_steps']:>12,}\n"
             f"White wins:   {s['white_rate'] * 100:>11.1f}%\n"
             f"Black wins:   {s['black_rate'] * 100:>11.1f}%\n"
-            f"Draws:        {s['draw_rate'] * 100:>11.1f}%\n"
+            f"Draws:        {s['draw_rate'] * 100:>11.1f}%  (kept {kept * 100:.1f}% / dropped {dropped * 100:.1f}%)\n"
             f"Avg game:     {s['avg_moves']:>12.1f} moves\n"
             f"Model:        v{s['model_version']:>11,}\n"
             f"Replay buf:   {s['replay_size']:>12,}\n"

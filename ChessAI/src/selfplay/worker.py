@@ -33,6 +33,25 @@ from src.selfplay.inference import DEFAULT_MODEL_ID, InferenceClient
 
 logger = logging.getLogger(__name__)
 
+# Material values used to score games that hit the move cap (a real, if crude,
+# proxy for who is actually winning when shuffling ends in a forced draw).
+_PIECE_VALUES = {
+    chess.PAWN: 1,
+    chess.KNIGHT: 3,
+    chess.BISHOP: 3,
+    chess.ROOK: 5,
+    chess.QUEEN: 9,
+}
+
+
+def _material_balance(board: chess.Board) -> float:
+    """White material minus black material, in pawn units."""
+    balance = 0.0
+    for square, piece in board.piece_map().items():
+        sign = 1.0 if piece.color == chess.WHITE else -1.0
+        balance += sign * _PIECE_VALUES.get(piece.piece_type, 0)
+    return balance
+
 
 # =============================================================================
 # Batched game simulation core (shared by self-play and evaluation)
@@ -48,19 +67,35 @@ class BatchedGameSimulator:
         max_game_moves: int,
         model_version: Optional[int],
         rng: Optional[np.random.Generator] = None,
+        random_open_plies: int = 0,
+        dirichlet_epsilon: float = 0.0,
+        dirichlet_alpha: float = 0.03,
     ) -> None:
         self.predictor = predictor
         self.concurrency = concurrency
         self.max_game_moves = max_game_moves
         self.model_version = model_version
         self.rng = rng or np.random.default_rng()
+        self.random_open_plies = random_open_plies
 
         self._active: List[Optional[Dict]] = []
         self.completed_games: List[Dict] = []
         self.completed_samples: List[List[Dict]] = []
         self.agents = [
-            NeuralAgent(predictor, temperature=temperature, version=model_version),
-            NeuralAgent(predictor, temperature=temperature, version=model_version),
+            NeuralAgent(
+                predictor,
+                temperature=temperature,
+                version=model_version,
+                dirichlet_epsilon=dirichlet_epsilon,
+                dirichlet_alpha=dirichlet_alpha,
+            ),
+            NeuralAgent(
+                predictor,
+                temperature=temperature,
+                version=model_version,
+                dirichlet_epsilon=dirichlet_epsilon,
+                dirichlet_alpha=dirichlet_alpha,
+            ),
         ]
 
     # ------------------------------------------------------------------
@@ -92,7 +127,10 @@ class BatchedGameSimulator:
             moves = list(board.legal_moves)
             move = None
             if moves and not board.is_game_over() and game["move_count"] < self.max_game_moves:
-                move = game["agent"]._select_from_logits(board, moves, logits[i])
+                if game["move_count"] < self.random_open_plies:
+                    move = self.rng.choice(moves)
+                else:
+                    move = game["agent"]._select_from_logits(board, moves, logits[i])
 
             if move is None:
                 self._finish_game(game)
@@ -124,11 +162,17 @@ class BatchedGameSimulator:
         board = game["board"]
         if board.is_game_over():
             result = board.result(claim_draw=True)
+            white_won = result == "1-0"
+            black_won = result == "0-1"
         else:
-            result = "1/2-1/2"  # capped by max_game_moves -> draw
+            # Capped by max_game_moves: keep "1/2-1/2" for the statistics, but
+            # score the training value by material so long shuffling games still
+            # carry a real, decisive signal instead of always predicting 0.
+            result = "1/2-1/2"
+            balance = _material_balance(board)
+            white_won = balance >= 1.0
+            black_won = balance <= -1.0
 
-        white_won = result == "1-0"
-        black_won = result == "0-1"
         for s in game["samples"]:
             if s["color"] == chess.WHITE:
                 s["value"] = 1.0 if white_won else (-1.0 if black_won else 0.0)
@@ -146,13 +190,15 @@ class BatchedGameSimulator:
         while completed < count:
             self._refill()
             new = self.step()
-            for g in self.completed_games[-new:]:
+            start = len(self.completed_games) - new
+            for g in self.completed_games[start:]:
                 total_moves += g["move_count"]
             completed += new
         # Finish any games still in flight (no new games are started).
         while self._active:
             new = self.step()
-            for g in self.completed_games[-new:]:
+            start = len(self.completed_games) - new
+            for g in self.completed_games[start:]:
                 total_moves += g["move_count"]
             completed += new
         return {"games": completed, "moves": total_moves}
@@ -184,6 +230,9 @@ def run_selfplay_worker(
     stop_event,
     flush_every: int = 5,
     worker_id: int = 0,
+    random_open_plies: int = 0,
+    dirichlet_epsilon: float = 0.0,
+    dirichlet_alpha: float = 0.03,
 ) -> None:
     """Top-level worker function (picklable: works with fork and spawn)."""
     try:
@@ -204,6 +253,9 @@ def run_selfplay_worker(
             stop_event,
             flush_every,
             worker_id,
+            random_open_plies,
+            dirichlet_epsilon,
+            dirichlet_alpha,
         )
     except Exception:
         logger.exception("Self-play worker crashed")
@@ -227,6 +279,9 @@ def _worker_loop(
     stop_event,
     flush_every: int,
     worker_id: int = 0,
+    random_open_plies: int = 0,
+    dirichlet_epsilon: float = 0.0,
+    dirichlet_alpha: float = 0.03,
 ) -> None:
     client = InferenceClient(request_queue, result_queue, worker_id=worker_id)
 
@@ -248,6 +303,9 @@ def _worker_loop(
         max_game_moves=max_game_moves,
         model_version=model_version,
         rng=rng,
+        random_open_plies=random_open_plies,
+        dirichlet_epsilon=dirichlet_epsilon,
+        dirichlet_alpha=dirichlet_alpha,
     )
 
     pending_games: List[Dict] = []
@@ -318,6 +376,9 @@ class SelfPlayWorker(Process):
         stop_event,
         flush_every: int = 5,
         worker_id: int = 0,
+        random_open_plies: int = 0,
+        dirichlet_epsilon: float = 0.0,
+        dirichlet_alpha: float = 0.03,
     ) -> None:
         super().__init__(daemon=True)
         self._args = (
@@ -337,6 +398,9 @@ class SelfPlayWorker(Process):
             stop_event,
             flush_every,
             worker_id,
+            random_open_plies,
+            dirichlet_epsilon,
+            dirichlet_alpha,
         )
 
     def run(self) -> None:  # pragma: no cover - thin wrapper

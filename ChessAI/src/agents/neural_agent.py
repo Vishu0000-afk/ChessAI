@@ -33,12 +33,16 @@ class NeuralAgent(ChessAgent):
         temperature: float = 1.0,
         version: Optional[int] = None,
         name: Optional[str] = None,
+        dirichlet_epsilon: float = 0.0,
+        dirichlet_alpha: float = 0.03,
     ) -> None:
         super().__init__(name=name)
         self.predictor = predictor
         self.temperature = temperature
         self.version = version
         self.rng = np.random.default_rng()
+        self.dirichlet_epsilon = dirichlet_epsilon
+        self.dirichlet_alpha = dirichlet_alpha
 
     def predict_batch(self, positions: List[chess.Board]) -> Tuple[np.ndarray, np.ndarray]:
         """Batch-evaluate positions: returns (logits[N,4096], values[N])."""
@@ -58,6 +62,13 @@ class NeuralAgent(ChessAgent):
 
         if self.temperature <= 0.0:
             return moves[int(np.argmax(probs))]
+
+        # Mix in Dirichlet noise so identical near-deterministic policies cannot
+        # lock into a repeating position cycle during self-play.
+        if self.dirichlet_epsilon > 0.0:
+            noise = self.rng.dirichlet([self.dirichlet_alpha] * len(moves))
+            probs = (1.0 - self.dirichlet_epsilon) * probs + self.dirichlet_epsilon * noise
+            probs = probs / probs.sum()
 
         choice = self.rng.choice(len(moves), p=probs)
         return moves[int(choice)]

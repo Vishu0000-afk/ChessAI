@@ -200,6 +200,9 @@ class SelfPlayCoordinator:
                 stop_event=self.stop_event,
                 flush_every=max(1, self.config.experience_flush_games),
                 worker_id=w,
+                random_open_plies=self.config.self_play_random_open_plies,
+                dirichlet_epsilon=self.config.dirichlet_epsilon,
+                dirichlet_alpha=self.config.dirichlet_alpha,
             )
             worker.start()
             self.workers.append(worker)
@@ -247,9 +250,7 @@ class SelfPlayCoordinator:
                 break
             for game in msg["games"]:
                 if drop_excess_draw(game, self.stats.draws, self.stats.games, self.config.draw_max_rate):
-                    self.stats.games += 1
-                    self.stats.moves += game["moves"]
-                    self.stats.samples += len(game["samples"])
+                    self.stats.record_dropped_draw(game["moves"], len(game["samples"]))
                     drained += 1
                     continue
                 self.stats.record_game(game["result"], game["moves"], len(game["samples"]))
