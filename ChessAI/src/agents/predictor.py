@@ -35,10 +35,16 @@ class LocalPredictor:
         self.model = model.to(self.device)
         self._lock = None  # optional external lock passed by coordinator
 
-    def predict_batch(self, positions: List[chess.Board]) -> Tuple[Logits, Values]:
+    def predict_batch(
+        self,
+        positions: List[chess.Board],
+        encoded: Optional[np.ndarray] = None,
+    ) -> Tuple[Logits, Values]:
         if not positions:
             return np.zeros((0, 4096), dtype=np.float32), np.zeros(0, dtype=np.float32)
-        x = torch.from_numpy(encode_board_batch(positions)).to(self.device)
+        if encoded is None:
+            encoded = encode_board_batch(positions)
+        x = torch.from_numpy(encoded).to(self.device)
         with torch.no_grad():
             logits, value = self.model(x)
         return logits.detach().cpu().numpy(), value.detach().cpu().numpy().reshape(-1)

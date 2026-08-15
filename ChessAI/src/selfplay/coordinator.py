@@ -262,10 +262,11 @@ class SelfPlayCoordinator:
 
     # ------------------------------------------------------------------
     def _learning_cycle(self) -> None:
+        t0 = time.monotonic()
         # Snapshot the active weights BEFORE training: the previous model.
         prev_state = {k: v.detach().clone() for k, v in self.model.state_dict().items()}
 
-        summary = self.learner.train()
+        summary = self.learner.train(track_norm=False)
         if not summary:
             return
         self.stats.training_steps = self.learner.total_training_steps
@@ -285,15 +286,22 @@ class SelfPlayCoordinator:
             self.model.load_state_dict(prev_state)
             logger.info("Rejected candidate; keeping model v%d.", self.learner.version)
 
+        games_trained = self.start_games + self.stats.games
+        versioned_due = (
+            self.config.checkpoint_every_n_games > 0
+            and games_trained % self.config.checkpoint_every_n_games == 0
+        )
         self.learner.checkpoint(
-            games_trained=self.start_games + self.stats.games,
+            games_trained=games_trained,
             version=self.learner.version,
             config=self.config.as_dict(),
             replay_info={"samples": len(self.replay_buffer)},
+            save_versioned=versioned_due,
         )
         self.stats.model_version = self.learner.version
         self.stats.replay_size = len(self.replay_buffer)
         self.stats.training_steps = self.learner.total_training_steps
+        self.stats.add_train_seconds(time.monotonic() - t0)
 
     def _evaluate_and_decide(self, prev_state) -> bool:
         """Register the previous model, play evaluation games, decide promotion."""

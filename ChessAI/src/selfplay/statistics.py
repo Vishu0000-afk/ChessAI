@@ -29,6 +29,11 @@ class SelfPlayStats:
         self.replay_size = 0
         self.start_time = time.monotonic()
         self.last_time = self.start_time
+        self.train_seconds = 0.0
+
+    def add_train_seconds(self, seconds: float) -> None:
+        """Accumulate wall-clock spent on learning cycles (not game play)."""
+        self.train_seconds += seconds
 
     def record_game(self, result: str, moves: int, samples: int) -> None:
         self.games += 1
@@ -43,10 +48,12 @@ class SelfPlayStats:
 
     def rates(self) -> Dict[str, float]:
         elapsed = max(time.monotonic() - self.start_time, 1e-9)
+        play_elapsed = max(elapsed - self.train_seconds, 1e-9)
         return {
             "games_per_sec": self.games / elapsed,
-            "moves_per_sec": self.moves / elapsed,
-            "samples_per_sec": self.samples / elapsed,
+            "play_games_per_sec": self.games / play_elapsed,
+            "moves_per_sec": self.moves / play_elapsed,
+            "samples_per_sec": self.samples / play_elapsed,
         }
 
     def result_rates(self) -> Dict[str, float]:
@@ -63,6 +70,7 @@ class SelfPlayStats:
         return {
             "games": self.games,
             "games_per_sec": rates["games_per_sec"],
+            "play_games_per_sec": rates["play_games_per_sec"],
             "moves_per_sec": rates["moves_per_sec"],
             "samples_per_sec": rates["samples_per_sec"],
             "moves": self.moves,
@@ -107,6 +115,7 @@ class Dashboard:
             "\n============== ChessAI Self-Play ==============\n"
             f"Games:        {s['games']:>12,}\n"
             f"Games/sec:    {rates:>12.1f}\n"
+            f"Play g/sec:   {s['play_games_per_sec']:>12.1f}\n"
             f"Moves/sec:    {s['moves_per_sec']:>12.1f}\n"
             f"Samples:      {s['samples']:>12,}\n"
             f"Training:     {s['training_steps']:>12,}\n"

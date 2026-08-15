@@ -17,7 +17,7 @@ import chess
 import numpy as np
 
 from src.agents.base import ChessAgent
-from src.learning.encoding import move_to_index, POLICY_SIZE
+from src.learning.encoding import move_to_indices, POLICY_SIZE
 
 EPSILON = 1e-9
 
@@ -53,9 +53,7 @@ class NeuralAgent(ChessAgent):
 
     def _select_from_logits(self, board: chess.Board, moves: List[chess.Move], logits: np.ndarray) -> chess.Move:
         """Sample/argmax a legal move from masked policy logits."""
-        move_logits = np.array(
-            [logits[move_to_index(m, board.turn)] for m in moves], dtype=np.float64
-        )
+        move_logits = logits[move_to_indices(moves, board.turn)].astype(np.float32)
         probs = _softmax(move_logits / max(self.temperature, EPSILON))
 
         if self.temperature <= 0.0:

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from contextlib import nullcontext
 from typing import Optional
 
@@ -42,6 +43,7 @@ class Trainer:
         use_mixed_precision: bool = True,
         mirror_augmentation: bool = True,
         compute_lock: Optional[threading.Lock] = None,
+        interleave_yield: float = 0.001,
     ) -> None:
         self.model = model
         self.device = torch.device(device)
@@ -50,6 +52,7 @@ class Trainer:
         self.use_mixed_precision = use_mixed_precision
         self.mirror_augmentation = mirror_augmentation
         self.compute_lock = compute_lock
+        self.interleave_yield = interleave_yield
         self.optimizer = torch.optim.Adam(
             model.parameters(), lr=learning_rate, weight_decay=weight_decay
         )
@@ -103,10 +106,17 @@ class Trainer:
         }
 
     def train(self, buffer: ReplayBuffer, steps: int) -> dict:
-        """Run ``steps`` mini-batch training steps; returns the last losses."""
+        """Run ``steps`` mini-batch training steps; returns the last losses.
+
+        A short sleep between steps (outside ``compute_lock``) lets the
+        inference server thread acquire the lock and keep serving self-play
+        workers, so training does not stall game generation.
+        """
         last = {}
         for _ in range(steps):
             last = self.train_step(buffer)
+            if self.interleave_yield > 0:
+                time.sleep(self.interleave_yield)
         return last
 
     def parameter_norm(self) -> float:

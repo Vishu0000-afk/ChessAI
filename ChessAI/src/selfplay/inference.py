@@ -154,8 +154,15 @@ class InferenceClient:
         self._counter = 0
         self._cache: Dict[int, Tuple[np.ndarray, np.ndarray]] = {}
 
-    def predict_batch(self, model_id: ModelId, boards) -> Tuple[np.ndarray, np.ndarray]:
-        encoded = encode_board_batch(boards)
+    def predict_batch(
+        self,
+        model_id: ModelId,
+        boards,
+        encoded: Optional[np.ndarray] = None,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Batch-predict ``boards``; pass ``encoded`` to skip re-encoding."""
+        if encoded is None:
+            encoded = encode_board_batch(boards)
         rid = self._next_id()
         # The server routes the reply to this client's queue (via worker_id),
         # so parallel workers never consume each other's results.

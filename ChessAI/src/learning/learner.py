@@ -91,42 +91,56 @@ class Learner:
         self.trainer.model.to(self.device)
 
     # ------------------------------------------------------------------
-    def train(self, steps: Optional[int] = None, rng: Optional[np.random.Generator] = None) -> dict:
+    def train(
+        self,
+        steps: Optional[int] = None,
+        rng: Optional[np.random.Generator] = None,
+        track_norm: bool = True,
+    ) -> dict:
         """Run a training cycle on the replay buffer; returns a summary.
 
         The summary records the parameter L2 norm before and after so it is
-        easy to verify (and prove) the weights actually changed.
+        easy to verify (and prove) the weights actually changed. Set
+        ``track_norm=False`` in production to skip the (GPU->CPU) norm copies
+        on the hot learning cycle.
         """
         if len(self.replay_buffer) < 1:
             logger.info("Replay buffer empty; skipping training cycle.")
             return {}
 
         steps = steps or self.training_steps_per_cycle
-        norm_before = self.trainer.parameter_norm()
+        norm_before = self.trainer.parameter_norm() if track_norm else None
         summary = self.trainer.train(self.replay_buffer, steps)
-        norm_after = self.trainer.parameter_norm()
+        norm_after = self.trainer.parameter_norm() if track_norm else None
 
         self.total_training_steps += steps
         for key in ("policy_loss", "value_loss", "total_loss"):
             if key in summary:
                 self.history[key].append(summary[key])
 
-        summary["param_norm_before"] = norm_before
-        summary["param_norm_after"] = norm_after
-        summary["param_delta"] = abs(norm_after - norm_before)
         summary["steps"] = steps
         summary["training_steps_total"] = self.total_training_steps
+        if track_norm:
+            summary["param_norm_before"] = norm_before
+            summary["param_norm_after"] = norm_after
+            summary["param_delta"] = abs(norm_after - norm_before)
+            logger.info(
+                "Training cycle done: steps=%d policy=%.4f value=%.4f |p| %.4f -> %.4f (d=%.5f)",
+                steps,
+                summary.get("policy_loss", 0.0),
+                summary.get("value_loss", 0.0),
+                norm_before,
+                norm_after,
+                summary["param_delta"],
+            )
+        else:
+            logger.info(
+                "Training cycle done: steps=%d policy=%.4f value=%.4f",
+                steps,
+                summary.get("policy_loss", 0.0),
+                summary.get("value_loss", 0.0),
+            )
         self.last_train_summary = summary
-
-        logger.info(
-            "Training cycle done: steps=%d policy=%.4f value=%.4f |p| %.4f -> %.4f (d=%.5f)",
-            steps,
-            summary.get("policy_loss", 0.0),
-            summary.get("value_loss", 0.0),
-            norm_before,
-            norm_after,
-            summary["param_delta"],
-        )
         return summary
 
     # ------------------------------------------------------------------
@@ -136,6 +150,7 @@ class Learner:
         version: Optional[int] = None,
         config: Optional[dict] = None,
         replay_info: Optional[dict] = None,
+        save_versioned: bool = True,
     ) -> str:
         """Save the current model under the given (default: current) version."""
         version = self.version if version is None else version
@@ -148,4 +163,6 @@ class Learner:
             replay_info=replay_info or {"samples": len(self.replay_buffer)},
             history={k: list(v) for k, v in self.history.items()},
         )
-        return self.model_manager.save(self.model, self.trainer.optimizer, meta)
+        return self.model_manager.save(
+            self.model, self.trainer.optimizer, meta, save_versioned=save_versioned
+        )

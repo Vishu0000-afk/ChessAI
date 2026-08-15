@@ -23,7 +23,12 @@ import chess
 import numpy as np
 
 from src.agents.neural_agent import NeuralAgent
-from src.learning.encoding import encode_board, legal_move_mask, move_to_index, pack_mask
+from src.learning.encoding import (
+    encode_board_batch,
+    legal_move_mask,
+    move_to_index,
+    pack_mask,
+)
 from src.selfplay.inference import DEFAULT_MODEL_ID, InferenceClient
 
 logger = logging.getLogger(__name__)
@@ -78,7 +83,8 @@ class BatchedGameSimulator:
             return 0
 
         boards = [g["board"] for g in self._active]
-        logits, _ = self.predictor.predict_batch(boards)
+        encoded = encode_board_batch(boards)
+        logits, _ = self.predictor.predict_batch(boards, encoded=encoded)
 
         completed = 0
         for i, game in enumerate(self._active):
@@ -95,7 +101,7 @@ class BatchedGameSimulator:
                 continue
 
             sample = {
-                "input": encode_board(board),
+                "input": encoded[i],
                 "move_index": move_to_index(move, board.turn),
                 "legal_packed": pack_mask(legal_move_mask(board)),
                 "color": board.turn,
@@ -229,8 +235,8 @@ def _worker_loop(
             self.client = client
             self.model_id = model_id
 
-        def predict_batch(self, boards):
-            return self.client.predict_batch(self.model_id, boards)
+        def predict_batch(self, boards, encoded=None):
+            return self.client.predict_batch(self.model_id, boards, encoded=encoded)
 
     predictor = _QueuePredictor(client, DEFAULT_MODEL_ID)
     rng = np.random.default_rng(seed)

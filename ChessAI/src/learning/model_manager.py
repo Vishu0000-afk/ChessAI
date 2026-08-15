@@ -58,13 +58,15 @@ class ModelManager:
         model: nn.Module,
         optimizer: torch.optim.Optimizer,
         metadata: CheckpointMetadata,
+        save_versioned: bool = True,
     ) -> str:
-        """Save a checkpoint; returns the written path."""
-        versioned_path = os.path.join(
-            self.checkpoint_dir, self.save_name_template.format(version=metadata.version)
-        )
-        latest_path = os.path.join(self.checkpoint_dir, self.latest_name)
+        """Save a checkpoint; returns the written path.
 
+        ``latest.pth`` is always written so training can resume after a crash;
+        the versioned ``model_XXXXXX.pth`` file is written only when
+        ``save_versioned`` is True (coordinator gates this on the configured
+        checkpoint cadence to avoid duplicate disk writes every cycle).
+        """
         payload = {
             "model_state": model.state_dict(),
             "optimizer_state": optimizer.state_dict() if optimizer is not None else None,
@@ -78,10 +80,21 @@ class ModelManager:
                 "history": metadata.history,
             },
         }
-        torch.save(payload, versioned_path)
+        written = latest_path = os.path.join(self.checkpoint_dir, self.latest_name)
+        if save_versioned:
+            versioned_path = os.path.join(
+                self.checkpoint_dir, self.save_name_template.format(version=metadata.version)
+            )
+            torch.save(payload, versioned_path)
+            written = versioned_path
         torch.save(payload, latest_path)
-        logger.info("Saved checkpoint version=%d games=%d -> %s", metadata.version, metadata.games_trained, versioned_path)
-        return versioned_path
+        logger.info(
+            "Saved checkpoint version=%d games=%d -> %s",
+            metadata.version,
+            metadata.games_trained,
+            written,
+        )
+        return written
 
     # ------------------------------------------------------------------
     def _try_load(self, path: str):

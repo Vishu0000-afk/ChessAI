@@ -77,13 +77,13 @@ NN_CONV_CHANNELS: int = 64
 NN_RES_BLOCKS: int = 2  # residual blocks stacked on the convolutional trunk
 
 # Batched inference tuning.
-INFERENCE_MAX_BATCH: int = 5000  # max positions per GPU/CPU forward pass
+INFERENCE_MAX_BATCH: int = 512  # max positions per GPU/CPU forward pass
 INFERENCE_POLL_SECONDS: float = 0.001
 
 # Training.
 REPLAY_BUFFER_SIZE: int = 1_000_000
 TRAIN_EVERY_N_GAMES: int = 100
-BATCH_SIZE: int = 5000
+BATCH_SIZE: int = 512
 TRAINING_STEPS: int = 100
 LEARNING_RATE: float = 1e-3
 WEIGHT_DECAY: float = 1e-4

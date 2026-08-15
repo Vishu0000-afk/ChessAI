@@ -52,7 +52,7 @@
     python ChessAI/src/main.py --mode self_play --games 100 --no-resume
 
   Full GPU training run:
-    python ChessAI/src/main.py --mode self_play --games 1000 --workers 8 --device cuda
+    python ChessAI/src/main.py --mode self_play --games 10000 --workers 8 --device cuda
 
   Data collection only (no training / no evaluation):
     python ChessAI/src/main.py --mode self_play --games 10000 --no-train --no-evaluate
@@ -70,11 +70,26 @@ python ChessAI/src/main.py --mode self_play --games 100000 --train-every 100 --s
   Control concurrency / workers (effective GPU batch size = workers * concurrency):
     python ChessAI/src/main.py --mode self_play --games 100000 --workers 4 --concurrency 8
 
+  SPEED TIPS (games/sec):
+    - Games/sec is dominated by game length AND round-trip latency. Raise
+      per-worker concurrency so each inference call covers more positions:
+        python ChessAI/src/main.py --mode self_play --games 100000 --workers 4 --concurrency 16
+      (measured ~2.4x more positions/sec than the 16x4 default; the GPU
+      handles the larger batch fine).
+    - Training is now interleaved with self-play (no full stall), so the
+      dashboard's "Play g/sec" shows your true game rate vs the blended
+      "Games/sec" (which includes training/eval time).
+    - Versioned checkpoints are written every --checkpoint-every games
+      (latest.pth still updates every training cycle).
+
 
 3) BENCHMARK MODE (throughput, no training)
 --------------------------------------------------------------------------------
   python ChessAI/src/main.py --mode benchmark --games 10000
   python ChessAI/src/main.py --mode benchmark --games 100000 --workers 8 --device cuda
+
+  Throughput tuning (biggest lever is per-worker concurrency, not worker count):
+    python ChessAI/src/main.py --mode benchmark --games 100000 --workers 4 --concurrency 16
 
 
 4) CHANGE THE DEFAULT MODE (configs/config.py)
@@ -111,7 +126,7 @@ python ChessAI/src/main.py --mode self_play --games 100000 --train-every 100 --s
   --batch-size N      training mini-batch size
   --checkpoint-every N  checkpoint every N games
   --replay-size N     replay buffer capacity
-  --concurrency N     games in flight per worker
+  --concurrency N     games in flight per worker (raise to 16-32 for higher games/sec)
 
 
 7) TROUBLESHOOTING
