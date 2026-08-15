@@ -9,6 +9,7 @@ move search lives in ChessEngine.
 from __future__ import annotations
 
 import logging
+import random
 import time
 from typing import Optional
 
@@ -36,6 +37,24 @@ SIDEBAR_COLOR = (216, 210, 194)
 
 MIN_SQUARE_SIZE = 24
 MAX_SQUARE_SIZE = 100
+
+
+def game_over_reason(board: chess.Board) -> str:
+    """Return a human-readable label for a finished game, or 'Game in progress'."""
+    if board.is_checkmate():
+        winner = "White" if board.turn == chess.BLACK else "Black"
+        return f"Checkmate — {winner} wins!"
+    if board.is_stalemate():
+        return "Stalemate — draw"
+    if board.is_insufficient_material():
+        return "Insufficient material — draw"
+    if board.is_fivefold_repetition():
+        return "Draw — repetition (fivefold)"
+    if board.is_seventyfive_moves():
+        return "Draw — 75-move rule"
+    if board.is_game_over():
+        return "Draw"
+    return "Game in progress"
 
 
 class ChessGUI:
@@ -81,8 +100,10 @@ class ChessGUI:
         self._last_move_time = time.monotonic()
         self._anim_move: Optional[chess.Move] = None
         self._anim_start = 0.0
+        self._end_logged = False
 
         self._font = pygame.font.SysFont("arial", 22)
+        self._overlay_font = pygame.font.Font(None, 36)
 
     def run(self) -> None:
         """Run the main event loop until the window is closed."""
@@ -153,10 +174,21 @@ class ChessGUI:
             logger.info("Human played %s", move.uci())
 
     def _make_ai_move(self) -> None:
-        move = self.agent.select_move(self.board.raw)
-        if move is None:
-            logger.info("Engine found no move; game must be over.")
+        try:
+            move = self.agent.select_move(self.board.raw)
+        except Exception:
+            logger.exception("AI agent raised an error while selecting a move.")
+            self.status_message = "AI error — see console"
+            self._last_move_time = time.monotonic()
             return
+        if move is None:
+            if self.board.is_game_over():
+                logger.info("Engine found no move; game must be over.")
+                return
+            logger.error(
+                "Agent returned no move while the game is not over; falling back to a random legal move."
+            )
+            move = random.choice(self.board.legal_moves())
         stats = self.engine_stats()
         logger.info(
             "AI chose %s | depth=%d nodes=%d time=%.2fs nps=%.0f eval=%d",
@@ -190,7 +222,14 @@ class ChessGUI:
             return
         was_ai_turn = self.board.turn() == self.ai_color
         move = self._anim_move
-        self.board.make_move(move)
+        try:
+            self.board.make_move(move)
+        except Exception:
+            logger.exception("Failed to apply animated move %s.", move)
+            self.status_message = "Move error — see console"
+            self._anim_move = None
+            self._last_move_time = time.monotonic()
+            return
         self.last_move = move
         self._anim_move = None
         self._last_move_time = time.monotonic()
@@ -202,6 +241,8 @@ class ChessGUI:
         self.board = Board.new_game()
         self.last_move = None
         self._anim_move = None
+        self._end_logged = False
+        self.status_message = ""
         self.input_handler.reset()
         reset = getattr(self.agent, "reset", None)
         if callable(reset):
@@ -224,8 +265,32 @@ class ChessGUI:
             anim_move=self._anim_move,
             anim_progress=anim_progress,
         )
+        if self.board.is_game_over():
+            if not self._end_logged:
+                self._end_logged = True
+                logger.info("Game over: %s", game_over_reason(self.board.raw))
+            self._draw_game_over_overlay()
         self._draw_sidebar()
         pygame.display.flip()
+
+    def _draw_game_over_overlay(self) -> None:
+        """Draw a translucent panel over the board announcing the game result."""
+        board_px = self.renderer.square_size * 8
+        ox, oy = self.renderer.origin_x, self.renderer.origin_y
+        overlay = pygame.Surface((board_px, board_px), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 170))
+        self.screen.blit(overlay, (ox, oy))
+
+        reason = game_over_reason(self.board.raw)
+        lines = [reason, "Press R to restart"]
+        line_height = self._overlay_font.get_linesize()
+        total_h = line_height * len(lines)
+        y = oy + (board_px - total_h) // 2
+        for line in lines:
+            text = self._overlay_font.render(line, True, (255, 255, 255))
+            rect = text.get_rect(center=(ox + board_px // 2, y + line_height // 2))
+            self.screen.blit(text, rect)
+            y += line_height
 
     def _draw_sidebar(self) -> None:
         y_offset = self.window_h - SIDEBAR_HEIGHT
@@ -236,13 +301,10 @@ class ChessGUI:
         self.screen.blit(text_surface, (10, y_offset + 18))
 
     def _status_text(self) -> str:
-        if self.board.is_checkmate():
-            winner = "White" if self.board.turn() == chess.BLACK else "Black"
-            return f"Checkmate — {winner} wins! Press R to restart."
-        if self.board.is_stalemate():
-            return "Stalemate — draw. Press R to restart."
-        if self.board.is_draw():
-            return "Draw. Press R to restart."
+        if self.status_message:
+            return self.status_message
+        if self.board.is_game_over():
+            return f"{game_over_reason(self.board.raw)}   [R: restart]"
         turn_name = "White" if self.board.turn() == chess.WHITE else "Black"
         check_suffix = " (check)" if self.board.is_check() else ""
         return f"{turn_name} to move{check_suffix}   [R: restart]"
