@@ -52,7 +52,7 @@
     python ChessAI/src/main.py --mode self_play --games 100 --no-resume
 
   Full GPU training run:
-    python ChessAI/src/main.py --mode self_play --games 300000 --workers 8 --device cuda
+    python ChessAI/src/main.py --mode self_play --games 50000 --workers 8 --device cuda
 
   Data collection only (no training / no evaluation):
     python ChessAI/src/main.py --mode self_play --games 10000 --no-train --no-evaluate
@@ -71,6 +71,8 @@ python ChessAI/src/main.py --mode self_play --games 100000 --train-every 100 --s
     python ChessAI/src/main.py --mode self_play --games 100000 --workers 4 --concurrency 8
 
   SPEED TIPS (games/sec):
+    - GPU runs now default to --concurrency 16 automatically (explicit
+      --concurrency N always overrides it); CPU runs keep the config default.
     - Games/sec is dominated by game length AND round-trip latency. Raise
       per-worker concurrency so each inference call covers more positions:
         python ChessAI/src/main.py --mode self_play --games 100000 --workers 4 --concurrency 16

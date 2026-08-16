@@ -67,11 +67,12 @@ def _parse_args(argv: Optional[list] = None) -> argparse.Namespace:
 
 
 def _selfplay_config(args: argparse.Namespace, train_enabled: bool = True) -> SelfPlayConfig:
+    device = resolve_device(args.device)
     overrides: dict = {
         "game_mode": args.mode,
         "train_enabled": train_enabled and not args.no_train,
         "evaluate_enabled": not args.no_evaluate,
-        "device": resolve_device(args.device),
+        "device": device,
         "auto_resume": not args.no_resume,
     }
     mapping = {
@@ -93,6 +94,8 @@ def _selfplay_config(args: argparse.Namespace, train_enabled: bool = True) -> Se
         value = getattr(args, arg)
         if value is not None and field is not None:
             overrides[field] = value
+    if args.concurrency is None and device == "cuda":
+        overrides["self_play_concurrency"] = 16
     return replace(SelfPlayConfig(), **overrides)
 
 
